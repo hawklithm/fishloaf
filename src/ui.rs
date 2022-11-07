@@ -29,30 +29,21 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .select(app.tabs.index);
     f.render_widget(tabs, chunks[0]);
     // match app.tabs.index {
-    draw_first_tab(f, app, chunks[1]);
+    draw_choosen_tab(f, app, chunks[1]);
     // 1 => draw_second_tab(f, app, chunks[1]),
     // 2 => draw_third_tab(f, app, chunks[1]),
     // _ => {}
     // };
 }
 
-fn draw_first_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+fn draw_choosen_tab<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
 {
     let chunks = Layout::default()
-        .constraints(
-            [
-                Constraint::Length(9),
-                Constraint::Min(8),
-                Constraint::Length(7),
-            ]
-            .as_ref(),
-        )
+        .constraints([Constraint::Min(5), Constraint::Length(3)].as_ref())
         .split(area);
-    draw_gauges(f, app, chunks[0]);
-    draw_charts(f, app, chunks[1]);
-    // draw_text(f, chunks[2]);
+    draw_dialog(f, app, chunks[0]);
 }
 
 fn draw_gauges<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
@@ -109,45 +100,34 @@ where
     // f.render_widget(line_gauge, chunks[2]);
 }
 
-fn draw_charts<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+fn draw_dialog<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
 {
-    let constraints = vec![Constraint::Percentage(100)];
+    let constraints = vec![Constraint::Percentage(80), Constraint::Percentage(20)];
     let chunks = Layout::default()
         .constraints(constraints)
         .direction(Direction::Horizontal)
         .split(area);
-    {
-        let chunks = Layout::default()
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(chunks[0]);
-        {
-            let chunks = Layout::default()
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .direction(Direction::Horizontal)
-                .split(chunks[0]);
-
-            // Draw tasks
-            let tasks: Vec<ListItem> = app
-                .tasks
-                .items
-                .iter()
-                .map(|i| ListItem::new(vec![Spans::from(Span::raw(*i))]))
-                .collect();
-            let tasks = List::new(tasks)
-                .block(Block::default().borders(Borders::ALL).title("List"))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol("> ");
-            f.render_stateful_widget(tasks, chunks[0], &mut app.tasks.state);
-
-            // Draw logs
-            let info_style = Style::default().fg(Color::Blue);
-            let warning_style = Style::default().fg(Color::Yellow);
-            let error_style = Style::default().fg(Color::Magenta);
-            let critical_style = Style::default().fg(Color::Red);
-        }
-    }
+    let speaker_name_style = Style::default().fg(Color::Blue);
+    // Draw tasks
+    let tasks: Vec<ListItem> = app
+        .tasks
+        .items
+        .iter()
+        .map(|m| {
+            ListItem::new(vec![Spans::from(vec![
+                Span::styled(m.speaker, speaker_name_style),
+                Span::raw(" >>>> "),
+                Span::raw(m.message),
+            ])])
+        })
+        .collect();
+    let tasks = List::new(tasks)
+        .block(Block::default().borders(Borders::TOP).title("dialog"))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+    f.render_stateful_widget(tasks, chunks[0], &mut app.tasks.state);
 }
 
 // fn draw_text<B>(f: &mut Frame<B>, area: Rect)

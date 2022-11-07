@@ -4,10 +4,245 @@ use rand::{
 };
 use tui::widgets::ListState;
 
-const TASKS: [&str; 24] = [
-    "Item1", "Item2", "Item3", "Item4", "Item5", "Item6", "Item7", "Item8", "Item9", "Item10",
-    "Item11", "Item12", "Item13", "Item14", "Item15", "Item16", "Item17", "Item18", "Item19",
-    "Item20", "Item21", "Item22", "Item23", "Item24",
+const TASKS: [Message; 71] = [
+    Message {
+        message: "message1",
+        speaker: "speaker1",
+    },
+    Message {
+        message: "message2",
+        speaker: "speaker2",
+    },
+    Message {
+        message: "message3",
+        speaker: "speaker3",
+    },
+    Message {
+        message: "message4",
+        speaker: "speaker4",
+    },
+    Message {
+        message: "message5",
+        speaker: "speaker5",
+    },
+    Message {
+        message: "message6",
+        speaker: "speaker6",
+    },
+    Message {
+        message: "message7",
+        speaker: "speaker7",
+    },
+    Message {
+        message: "message8",
+        speaker: "speaker8",
+    },
+    Message {
+        message: "message9",
+        speaker: "speaker9",
+    },
+    Message {
+        message: "message10",
+        speaker: "speaker10",
+    },
+    Message {
+        message: "message11",
+        speaker: "speaker11",
+    },
+    Message {
+        message: "message12",
+        speaker: "speaker12",
+    },
+    Message {
+        message: "message13",
+        speaker: "speaker13",
+    },
+    Message {
+        message: "message14",
+        speaker: "speaker14",
+    },
+    Message {
+        message: "message15",
+        speaker: "speaker15",
+    },
+    Message {
+        message: "message16",
+        speaker: "speaker16",
+    },
+    Message {
+        message: "message17",
+        speaker: "speaker17",
+    },
+    Message {
+        message: "message18",
+        speaker: "speaker18",
+    },
+    Message {
+        message: "message19",
+        speaker: "speaker19",
+    },
+    Message {
+        message: "message20",
+        speaker: "speaker20",
+    },
+    Message {
+        message: "message21",
+        speaker: "speaker21",
+    },
+    Message {
+        message: "message22",
+        speaker: "speaker22",
+    },
+    Message {
+        message: "message23",
+        speaker: "speaker23",
+    },
+    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },
+    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },    Message {
+        message: "message24",
+        speaker: "speaker24",
+    },
 ];
 
 const LOGS: [(&str, &str); 26] = [
@@ -221,6 +456,12 @@ pub struct Server<'a> {
     pub status: &'a str,
 }
 
+#[derive(Clone, Copy)]
+pub struct Message<'a> {
+    pub message: &'a str,
+    pub speaker: &'a str,
+}
+
 pub struct App<'a> {
     pub title: &'a str,
     pub should_quit: bool,
@@ -228,7 +469,7 @@ pub struct App<'a> {
     // pub show_chart: bool,
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
-    pub tasks: StatefulList<&'a str>,
+    pub tasks: StatefulList<Message<'a>>,
     // pub logs: StatefulList<(&'a str, &'a str)>,
     // pub signals: Signals,
     // pub barchart: Vec<(&'a str, u64)>,
