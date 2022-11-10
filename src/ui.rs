@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, InputMode};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,6 +12,7 @@ use tui::{
     },
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
@@ -44,60 +45,35 @@ where
         .constraints([Constraint::Min(5), Constraint::Length(3)].as_ref())
         .split(area);
     draw_dialog(f, app, chunks[0]);
+    draw_user_input(f, app, chunks[1]);
 }
 
-fn draw_gauges<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+fn draw_user_input<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
 {
-    let chunks = Layout::default()
-        .constraints(
-            [
-                Constraint::Length(2),
-                Constraint::Length(3),
-                Constraint::Length(1),
-            ]
-            .as_ref(),
-        )
-        .margin(1)
-        .split(area);
-    let block = Block::default().borders(Borders::ALL).title("Graphs");
-    f.render_widget(block, area);
+    let input = Paragraph::new(app.input.as_ref())
+        .style(match app.input_mode {
+            InputMode::Normal => Style::default(),
+            InputMode::Editing => Style::default().fg(Color::Yellow),
+        })
+        .block(Block::default().borders(Borders::TOP).title("Input"));
+    f.render_widget(input, area);
+    match app.input_mode {
+        InputMode::Normal =>
+            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+            {}
 
-    // let label = format!("{:.2}%", app.progress * 100.0);
-    // let gauge = Gauge::default()
-    //     .block(Block::default().title("Gauge:"))
-    //     .gauge_style(
-    //         Style::default()
-    //             .fg(Color::Magenta)
-    //             .bg(Color::Black)
-    //             .add_modifier(Modifier::ITALIC | Modifier::BOLD),
-    //     )
-    //     .label(label)
-    //     .ratio(app.progress);
-    // f.render_widget(gauge, chunks[0]);
-
-    // let sparkline = Sparkline::default()
-    //     .block(Block::default().title("Sparkline:"))
-    //     .style(Style::default().fg(Color::Green))
-    //     .data(&app.sparkline.points)
-    //     .bar_set(if app.enhanced_graphics {
-    //         symbols::bar::NINE_LEVELS
-    //     } else {
-    //         symbols::bar::THREE_LEVELS
-    //     });
-    // f.render_widget(sparkline, chunks[1]);
-
-    // let line_gauge = LineGauge::default()
-    //     .block(Block::default().title("LineGauge:"))
-    //     .gauge_style(Style::default().fg(Color::Magenta))
-    //     .line_set(if app.enhanced_graphics {
-    //         symbols::line::THICK
-    //     } else {
-    //         symbols::line::NORMAL
-    //     })
-    //     .ratio(app.progress);
-    // f.render_widget(line_gauge, chunks[2]);
+        InputMode::Editing => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor(
+                // Put cursor past the end of the input text
+                area.x + app.input.width() as u16,
+                // Move one line down, from the border to the input line
+                area.y + 1,
+            )
+        }
+    }
 }
 
 fn draw_dialog<B>(f: &mut Frame<B>, app: &mut App, area: Rect)

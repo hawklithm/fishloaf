@@ -104,142 +104,188 @@ const TASKS: [Message; 71] = [
     Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
-    },    Message {
+    },
+    Message {
         message: "message24",
         speaker: "speaker24",
     },
@@ -300,6 +346,11 @@ const EVENTS: [(&str, u64); 24] = [
     ("B23", 3),
     ("B24", 5),
 ];
+
+pub enum InputMode {
+    Normal,
+    Editing,
+}
 
 #[derive(Clone)]
 pub struct RandomSignal {
@@ -466,6 +517,11 @@ pub struct App<'a> {
     pub title: &'a str,
     pub should_quit: bool,
     pub tabs: TabsState<'a>,
+    pub input: String,
+    /// Current input mode
+    pub input_mode: InputMode,
+    /// History of recorded messages
+    pub messages: Vec<String>,
     // pub show_chart: bool,
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
@@ -497,6 +553,9 @@ impl<'a> App<'a> {
             //     tick_rate: 1,
             // },
             tasks: StatefulList::with_items(TASKS.to_vec()),
+            input: String::new(),
+            input_mode: InputMode::Normal,
+            messages: Vec::new(),
             // logs: StatefulList::with_items(LOGS.to_vec()),
             // signals: Signals {
             //     sin1: Signal {
@@ -558,15 +617,39 @@ impl<'a> App<'a> {
         self.tabs.previous();
     }
 
-    pub fn on_key(&mut self, c: char) {
-        match c {
-            'q' => {
-                self.should_quit = true;
-            }
-            't' => {
-                // self.show_chart = !self.show_chart;
+    pub fn on_enter(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => self.messages.push(self.input.drain(..).collect()),
+            _ => {}
+        }
+    }
+
+    pub fn on_esc(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => self.input_mode = InputMode::Normal,
+            _ => {}
+        }
+    }
+
+    pub fn on_backspace(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => {
+                self.input.pop();
             }
             _ => {}
+        }
+    }
+
+    pub fn on_key(&mut self, c: char) {
+        match self.input_mode {
+            InputMode::Normal => match c {
+                'q' => {
+                    self.should_quit = true;
+                }
+                'e' => self.input_mode = InputMode::Editing,
+                _ => {}
+            },
+            InputMode::Editing => self.input.push(c),
         }
     }
 
