@@ -424,6 +424,22 @@ impl<'a> TabsState<'a> {
     }
 }
 
+pub struct InputMessage {
+    pub message: String,
+    pub group: String,
+}
+
+pub struct MessageChannel {}
+
+impl MessageChannel {
+    pub fn callback(&self, input: InputMessage) {
+        println!(
+            "output message = {}, group = {}",
+            input.message, input.group
+        );
+    }
+}
+
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
@@ -526,6 +542,7 @@ pub struct App<'a> {
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
     pub tasks: StatefulList<Message<'a>>,
+    pub message_callback: MessageChannel,
     // pub logs: StatefulList<(&'a str, &'a str)>,
     // pub signals: Signals,
     // pub barchart: Vec<(&'a str, u64)>,
@@ -534,7 +551,7 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(title: &'a str, enhanced_graphics: bool) -> App<'a> {
+    pub fn new(title: &'a str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
         // let mut rand_signal = RandomSignal::new(0, 100);
         // let sparkline_points = rand_signal.by_ref().take(300).collect();
         // let mut sin_signal = SinSignal::new(0.2, 3.0, 18.0);
@@ -545,6 +562,7 @@ impl<'a> App<'a> {
             title,
             should_quit: false,
             tabs: TabsState::new(vec!["Tab0", "Tab1", "Tab2"]),
+            message_callback: call_back,
             // show_chart: true,
             // progress: 0.0,
             // sparkline: Signal {
@@ -619,7 +637,14 @@ impl<'a> App<'a> {
 
     pub fn on_enter(&mut self) {
         match self.input_mode {
-            InputMode::Editing => self.messages.push(self.input.drain(..).collect()),
+            InputMode::Editing => {
+                let msg: String = self.input.drain(..).collect();
+                let group = self.tabs.titles[self.tabs.index];
+                self.message_callback.callback(InputMessage {
+                    message: msg,
+                    group: String::from(group),
+                })
+            }
             _ => {}
         }
     }
