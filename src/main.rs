@@ -5,6 +5,8 @@ mod crossterm;
 // mod termion;
 mod ui;
 
+mod client;
+
 // #[cfg(feature = "crossterm")]
 use crate::crossterm::run;
 // #[cfg(feature = "termion")]
