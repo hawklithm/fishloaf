@@ -4,9 +4,13 @@ use std::{
     result,
 };
 
+use tokio::sync::mpsc::{Receiver, Sender};
+
+use crate::utils::{build_message, get_message_from_tcpstream_with_protocol};
+
 use self::my_custom_runtime::spawn;
 
-mod my_custom_runtime {
+pub(crate) mod my_custom_runtime {
     extern crate lazy_static;
     use futures::Future;
     use once_cell::sync::Lazy;
@@ -14,6 +18,10 @@ mod my_custom_runtime {
 
     pub fn spawn(f: impl Future<Output = ()> + Send + 'static) {
         EXECUTOR.spawn(f);
+    }
+
+    pub fn block_on_return<T>(f: impl Future<Output = T> + Send) -> T {
+        EXECUTOR.rt.block_on(f)
     }
 
     struct ThreadPool {
@@ -44,62 +52,48 @@ mod my_custom_runtime {
     }
 }
 
-const MAGIC: [u8; 3] = [0xf1, 0x60, 0x6f];
-
-fn check_header(head: [u8; 7]) -> result::Result<usize, String> {
-    for i in 0usize..3 {
-        if head[i] != MAGIC[i] {
-            return Err(String::from("header not match"));
-        }
-    }
-    let len_data = &head[3..7];
-    let len = (len_data[0] as usize) << 24
-        | (len_data[1] as usize) << 16
-        | (len_data[2] as usize) << 8
-        | len_data[3] as usize;
-
-    Ok(len)
-}
-
-pub fn start() {
-    //TODO 各个地方需要两个端口，一个处理server -> client的推送消息，不需要client回应，另外一个处理client->server的外发消息，需要回应
-    let mut stream = TcpStream::connect("127.0.0.1:9999").expect("connection failed!");
-    // let (tx, rx) = tokio::sync::mpsc::channel(8);
+fn createMessagePushClient(address: &str, port: u16) -> Receiver<String> {
+    let mut stream = TcpStream::connect((address, port)).expect("connection failed!");
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
     spawn(async move {
         loop {
-            let mut head = [0u8; 7];
-            if let Ok(head_size) = stream.read(&mut head) {
-                if head_size != 7 {
-                    continue;
-                }
-                if let Ok(data_size) = check_header(head) {
-                    if data_size > 0 {
-                        let mut buffer = [0u8; 1024];
-                        let mut data: Vec<u8> = Vec::new();
-                        let mut remain_data = data_size;
-                        while remain_data > 0 {
-                            if let Ok(data_size) = stream.read(&mut buffer) {
-                                if data_size > 0 {
-                                    remain_data -= data_size;
-                                    data.extend((&buffer[..data_size]).to_vec())
-                                }
-                            }
-                        }
-                        if let Ok(msg) = String::from_utf8(data) {
-                            println!("receive {} byte data, message={}", data_size, msg);
-                            // tx.send(msg);
-                        }
-                    }
-                }
-            }
+            let ret_msg = get_message_from_tcpstream_with_protocol(&mut stream);
+            let _ = tx.send(ret_msg);
         }
     });
-    loop {
-        let mut input = String::new();
-        let size = io::stdin().read_line(&mut input).expect("read line failed");
-        stream.write(&input.as_bytes()[..size]).expect("write fail");
-        stream.flush().expect("flush error");
-    }
+    return rx;
+}
+
+fn createMessageSendClient(address: &str, port: u16) -> (Sender<String>, Receiver<String>) {
+    let mut stream = TcpStream::connect((address, port)).expect("connection failed!");
+    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel(1024);
+    let (ret_tx, ret_rx) = tokio::sync::mpsc::channel(1024);
+    spawn(async move {
+        loop {
+            let msg_opt: Option<String> = msg_rx.recv().await;
+            if let Some(input) = msg_opt {
+                stream.write(&build_message(&input)).expect("write fail");
+                stream.flush().expect("flush error");
+            }
+            let ret_msg = get_message_from_tcpstream_with_protocol(&mut stream);
+            let _ = ret_tx.send(ret_msg).await;
+        }
+    });
+    return (msg_tx, ret_rx);
+}
+
+pub fn start(
+    address: &str,
+    push_listener_port: u16,
+    message_sender_port: u16,
+) -> (Receiver<String>, (Sender<String>, Receiver<String>)) {
+    //各个地方需要两个端口，一个处理server -> client的推送消息，不需要client回应，另外一个处理client->server的外发消息，需要回应
+    let push_notification_receiver = createMessagePushClient(address, push_listener_port);
+    let (message_sender, response_reciever) = createMessageSendClient(address, message_sender_port);
+    return (
+        push_notification_receiver,
+        (message_sender, response_reciever),
+    );
 }
 
 #[cfg(test)]
@@ -114,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_socket() {
-        start();
+        // start();
     }
 
     #[test]

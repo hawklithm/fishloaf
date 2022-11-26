@@ -17,7 +17,12 @@ use tui::{
     Terminal,
 };
 
-pub fn run(tick_rate: Duration, enhanced_graphics: bool) -> Result<(), Box<dyn Error>> {
+pub fn run(
+    tick_rate: Duration,
+    enhanced_graphics: bool,
+    address: &str,
+    port_pair: (u16, u16),
+) -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -26,7 +31,11 @@ pub fn run(tick_rate: Duration, enhanced_graphics: bool) -> Result<(), Box<dyn E
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let app = App::new("Crossterm Demo", enhanced_graphics, MessageChannel {});
+    let app = App::new(
+        "Crossterm Demo",
+        enhanced_graphics,
+        MessageChannel::new(address, port_pair.0, port_pair.1),
+    );
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal

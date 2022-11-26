@@ -2,294 +2,13 @@ use rand::{
     distributions::{Distribution, Uniform},
     rngs::ThreadRng,
 };
+use tokio::sync::mpsc::{Receiver, Sender};
 use tui::widgets::ListState;
 
-const TASKS: [Message; 71] = [
-    Message {
-        message: "message1",
-        speaker: "speaker1",
-    },
-    Message {
-        message: "message2",
-        speaker: "speaker2",
-    },
-    Message {
-        message: "message3",
-        speaker: "speaker3",
-    },
-    Message {
-        message: "message4",
-        speaker: "speaker4",
-    },
-    Message {
-        message: "message5",
-        speaker: "speaker5",
-    },
-    Message {
-        message: "message6",
-        speaker: "speaker6",
-    },
-    Message {
-        message: "message7",
-        speaker: "speaker7",
-    },
-    Message {
-        message: "message8",
-        speaker: "speaker8",
-    },
-    Message {
-        message: "message9",
-        speaker: "speaker9",
-    },
-    Message {
-        message: "message10",
-        speaker: "speaker10",
-    },
-    Message {
-        message: "message11",
-        speaker: "speaker11",
-    },
-    Message {
-        message: "message12",
-        speaker: "speaker12",
-    },
-    Message {
-        message: "message13",
-        speaker: "speaker13",
-    },
-    Message {
-        message: "message14",
-        speaker: "speaker14",
-    },
-    Message {
-        message: "message15",
-        speaker: "speaker15",
-    },
-    Message {
-        message: "message16",
-        speaker: "speaker16",
-    },
-    Message {
-        message: "message17",
-        speaker: "speaker17",
-    },
-    Message {
-        message: "message18",
-        speaker: "speaker18",
-    },
-    Message {
-        message: "message19",
-        speaker: "speaker19",
-    },
-    Message {
-        message: "message20",
-        speaker: "speaker20",
-    },
-    Message {
-        message: "message21",
-        speaker: "speaker21",
-    },
-    Message {
-        message: "message22",
-        speaker: "speaker22",
-    },
-    Message {
-        message: "message23",
-        speaker: "speaker23",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-    Message {
-        message: "message24",
-        speaker: "speaker24",
-    },
-];
+use crate::client::{
+    self,
+    my_custom_runtime::{block_on_return, spawn},
+};
 
 const LOGS: [(&str, &str); 26] = [
     ("Event1", "INFO"),
@@ -429,14 +148,33 @@ pub struct InputMessage {
     pub group: String,
 }
 
-pub struct MessageChannel {}
+pub struct MessageChannel {
+    pub push_notification_receiver: Receiver<String>,
+    pub message_sender_receiver: (Sender<String>, Receiver<String>),
+}
 
 impl MessageChannel {
+    pub fn new(address: &str, port0: u16, port1: u16) -> MessageChannel {
+        let (push_notification_receiver, message_sender_receiver) =
+            client::start(address, port0, port1);
+        MessageChannel {
+            push_notification_receiver,
+            message_sender_receiver,
+        }
+    }
+
     pub fn callback(&self, input: InputMessage) {
-        println!(
-            "output message = {}, group = {}",
-            input.message, input.group
-        );
+        let sender = &self.message_sender_receiver.0;
+        // println!(
+        //     "output message = {}, group = {}",
+        //     input.message, input.group
+        // );
+        if let Err(e) = sender.blocking_send(input.message) {
+            println!("error happend!{}", e);
+        }
+        // if let Err(e) = block_on_return(t) {
+        //     println!("error happend!{}", e);
+        // }
     }
 }
 
@@ -446,6 +184,12 @@ pub struct StatefulList<T> {
 }
 
 impl<T> StatefulList<T> {
+    pub fn new() -> StatefulList<T> {
+        StatefulList {
+            state: ListState::default(),
+            items: Vec::new(),
+        }
+    }
     pub fn with_items(items: Vec<T>) -> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
@@ -523,10 +267,10 @@ pub struct Server<'a> {
     pub status: &'a str,
 }
 
-#[derive(Clone, Copy)]
-pub struct Message<'a> {
-    pub message: &'a str,
-    pub speaker: &'a str,
+#[derive(Clone)]
+pub struct Message {
+    pub message: String,
+    pub speaker: String,
 }
 
 pub struct App<'a> {
@@ -541,7 +285,7 @@ pub struct App<'a> {
     // pub show_chart: bool,
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
-    pub tasks: StatefulList<Message<'a>>,
+    pub tasks: StatefulList<Message>,
     pub message_callback: MessageChannel,
     // pub logs: StatefulList<(&'a str, &'a str)>,
     // pub signals: Signals,
@@ -551,6 +295,16 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
+    fn waiting_message(&mut self) {
+        let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.1;
+        if let Ok(message) = receiver.try_recv() {
+            self.tasks.items.push(Message {
+                message: message,
+                speaker: String::from("none"),
+            });
+        }
+    }
+
     pub fn new(title: &'a str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
         // let mut rand_signal = RandomSignal::new(0, 100);
         // let sparkline_points = rand_signal.by_ref().take(300).collect();
@@ -570,7 +324,7 @@ impl<'a> App<'a> {
             //     points: sparkline_points,
             //     tick_rate: 1,
             // },
-            tasks: StatefulList::with_items(TASKS.to_vec()),
+            tasks: StatefulList::new(),
             input: String::new(),
             input_mode: InputMode::Normal,
             messages: Vec::new(),
@@ -679,6 +433,7 @@ impl<'a> App<'a> {
     }
 
     pub fn on_tick(&mut self) {
+        self.waiting_message();
         // Update progress
         // self.progress += 0.001;
         // if self.progress > 1.0 {

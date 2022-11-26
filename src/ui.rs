@@ -93,9 +93,9 @@ where
         .iter()
         .map(|m| {
             ListItem::new(vec![Spans::from(vec![
-                Span::styled(m.speaker, speaker_name_style),
+                Span::styled(&m.speaker, speaker_name_style),
                 Span::raw(" >>>> "),
-                Span::raw(m.message),
+                Span::raw(&m.message),
             ])])
         })
         .collect();
