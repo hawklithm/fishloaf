@@ -58,7 +58,7 @@ fn createMessagePushClient(address: &str, port: u16) -> Receiver<String> {
     spawn(async move {
         loop {
             let ret_msg = get_message_from_tcpstream_with_protocol(&mut stream);
-            let _ = tx.send(ret_msg);
+            let _ = tx.send(ret_msg).await;
         }
     });
     return rx;

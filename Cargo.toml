@@ -16,3 +16,13 @@ lazy_static = "1.4.0"
 num_cpus = "1"
 futures = { version = "0.3", features = ["thread-pool"] }
 once_cell = "1.5"
+tracing = "0.1.*"
+tracing-appender = "0.2.*"
+tracing-subscriber = { version = "0.3.*", features = [
+    "local-time",
+    "env-filter",
+    "time"
+] }
+time = { version = "0.3.*", features = ["macros", "local-offset"] }
+
+dirs = "4"

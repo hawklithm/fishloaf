@@ -3,6 +3,7 @@ use rand::{
     rngs::ThreadRng,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::info;
 use tui::widgets::ListState;
 
 use crate::client::{
@@ -295,14 +296,25 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn waiting_message(&mut self) {
-        let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.1;
+    fn receive_push_notification(&mut self) {
+        let receiver: &mut Receiver<String> = &mut self.message_callback.push_notification_receiver;
         if let Ok(message) = receiver.try_recv() {
+            info!("message receive: {}", message.clone());
             self.tasks.items.push(Message {
                 message: message,
                 speaker: String::from("none"),
             });
         }
+    }
+
+    fn waiting_message(&mut self) {
+        // let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.1;
+        // if let Ok(message) = receiver.try_recv() {
+        //     self.tasks.items.push(Message {
+        //         message: message,
+        //         speaker: String::from("none"),
+        //     });
+        // }
     }
 
     pub fn new(title: &'a str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
@@ -434,6 +446,7 @@ impl<'a> App<'a> {
 
     pub fn on_tick(&mut self) {
         self.waiting_message();
+        self.receive_push_notification();
         // Update progress
         // self.progress += 0.001;
         // if self.progress > 1.0 {
