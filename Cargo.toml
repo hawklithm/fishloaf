@@ -24,5 +24,11 @@ tracing-subscriber = { version = "0.3.*", features = [
     "time"
 ] }
 time = { version = "0.3.*", features = ["macros", "local-offset"] }
-
 dirs = "4"
+chashmap = "2.2"
+arc-swap = "1.5"
+uuid = { version = "0.8.2", features = ["v4"] }
+json="0.12"
+
+
+

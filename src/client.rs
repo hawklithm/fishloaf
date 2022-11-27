@@ -1,14 +1,214 @@
+use arc_swap::ArcSwap;
+use chashmap::CHashMap;
+use json::{object::Object, JsonValue};
+use lazy_static::lazy_static;
 use std::{
     io::{self, Read, Write},
     net::TcpStream,
     result,
+    sync::Arc,
 };
+use tracing::error;
+use uuid::Uuid;
 
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::utils::{build_message, get_message_from_tcpstream_with_protocol};
 
 use self::my_custom_runtime::spawn;
+
+lazy_static! {
+    pub static ref RESPONSE_WAITING_LIST: ArcSwap<CHashMap<String, String>> =
+        ArcSwap::from(Arc::new(CHashMap::new()));
+}
+
+pub struct SystemRequest {
+    pub method: String,
+    pub trace_id: String,
+}
+
+impl Into<JsonValue> for SystemRequest {
+    fn into(self) -> JsonValue {
+        let mut obj = Object::new();
+        obj.insert("method", json::JsonValue::String(self.method));
+        obj.insert("traceId", json::JsonValue::String(self.trace_id));
+        JsonValue::Object(obj)
+    }
+}
+
+pub struct ActionResult<T> {
+    pub data: Option<T>,
+    pub success: bool,
+    pub message: Option<String>,
+    pub trace_id: String,
+}
+
+impl<T> ActionResult<T> {
+    pub fn create_success(data: T, trace_id: String) -> ActionResult<T> {
+        ActionResult {
+            data: Some(data),
+            success: true,
+            message: None,
+            trace_id,
+        }
+    }
+
+    pub fn create_error(error_msg: String, trace_id: String) -> ActionResult<T> {
+        ActionResult {
+            data: None,
+            success: true,
+            message: Some(error_msg),
+            trace_id,
+        }
+    }
+}
+
+pub struct ContactUserInfo {
+    pub unique_id: String,
+    pub display_name: String,
+    pub is_group: bool,
+}
+
+pub enum SerializeErr {
+    FormatError,
+    FieldMissing,
+    FieldFormatError,
+}
+
+impl TryFrom<JsonValue> for ContactUserInfo {
+    fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
+        if let JsonValue::Object(data) = value {
+            return Ok(ContactUserInfo {
+                unique_id: String::from(
+                    data.get("uniqueId")
+                        .ok_or(SerializeErr::FieldMissing)?
+                        .as_str()
+                        .ok_or(SerializeErr::FieldFormatError)?,
+                ),
+                display_name: String::from(
+                    data.get("displayName")
+                        .ok_or(SerializeErr::FieldMissing)?
+                        .as_str()
+                        .ok_or(SerializeErr::FieldFormatError)?,
+                ),
+                is_group: data
+                    .get("isGroup")
+                    .ok_or(SerializeErr::FieldMissing)?
+                    .as_bool()
+                    .ok_or(SerializeErr::FieldFormatError)?,
+            });
+        } else {
+            Err(SerializeErr::FormatError)
+        }
+    }
+
+    type Error = SerializeErr;
+}
+
+pub struct InputMessage {
+    pub message: String,
+    pub group: String,
+}
+
+pub trait ResponseChannel {
+    fn response(&mut self, message: String);
+}
+
+pub struct MessageChannel {
+    pub push_notification_receiver: Receiver<String>,
+    pub message_sender_receiver: (Sender<String>, Receiver<String>),
+}
+
+pub fn list_user_and_group(
+    channel: &MessageChannel,
+    // callback: Box<dyn ResponseChannel + Send + Sync>,
+) -> String {
+    let uuid = Uuid::new_v4().to_string();
+    channel.send_request(
+        json::stringify(SystemRequest {
+            method: String::from("listUserAndGroup"),
+            trace_id: uuid.clone(),
+        }),
+        // callback,
+    );
+    uuid
+}
+
+impl MessageChannel {
+    pub fn new(address: &str, port0: u16, port1: u16) -> MessageChannel {
+        let (push_notification_receiver, message_sender_receiver) = start(address, port0, port1);
+        MessageChannel {
+            push_notification_receiver,
+            message_sender_receiver,
+        }
+    }
+
+    fn send_request(
+        &self,
+        message: String,
+        // callback: Box<dyn ResponseChannel + Send + Sync>,
+    ) {
+        // RESPONSE_WAITING_LIST.load().insert(uuid.clone(), callback);
+        let sender = &self.message_sender_receiver.0;
+        if let Err(e) = sender.blocking_send(message) {
+            error!("error happen! {}", e);
+            // RESPONSE_WAITING_LIST.load().remove(t);
+        }
+    }
+
+    pub fn message_dispatch(&mut self) {
+        let receiver = &mut self.message_sender_receiver.1;
+        if let Ok(message) = receiver.try_recv() {
+            if let Some(result) = parse_json(message.clone()) {
+                RESPONSE_WAITING_LIST
+                    .load()
+                    .insert(result.trace_id, message);
+            }
+        }
+    }
+
+    pub fn callback(&self, input: InputMessage) {
+        let sender = &self.message_sender_receiver.0;
+        // println!(
+        //     "output message = {}, group = {}",
+        //     input.message, input.group
+        // );
+        if let Err(e) = sender.blocking_send(input.message) {
+            println!("error happend!{}", e);
+        }
+        // if let Err(e) = block_on_return(t) {
+        //     println!("error happend!{}", e);
+        // }
+    }
+}
+
+fn parse_json(message: String) -> Option<ActionResult<Vec<ContactUserInfo>>> {
+    if let Ok(jvalue) = json::parse(message.trim()) {
+        if let JsonValue::Object(obj) = jvalue {
+            let success = obj.get("success")?.as_bool()?;
+            if success {
+                let data_vec = obj.get("data")?;
+                if let JsonValue::Array(array) = data_vec {
+                    let mut result = Vec::new();
+                    for item in array {
+                        let sub = ContactUserInfo::try_from((*item).clone()).ok()?;
+                        result.push(sub);
+                    }
+                    return Some(ActionResult::create_success(
+                        result,
+                        String::from(obj.get("traceId")?.as_str()?),
+                    ));
+                }
+            } else {
+                return Some(ActionResult::create_error(
+                    String::from(obj.get("message")?.as_str()?),
+                    String::from(obj.get("traceId")?.as_str()?),
+                ));
+            }
+        }
+    }
+    return None;
+}
 
 pub(crate) mod my_custom_runtime {
     extern crate lazy_static;

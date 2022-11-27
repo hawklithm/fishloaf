@@ -1,7 +1,4 @@
-use crate::{
-    app::{App, MessageChannel},
-    ui,
-};
+use crate::{app::App, client::MessageChannel, ui};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -60,6 +57,7 @@ fn run_app<B: Backend>(
     tick_rate: Duration,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
+    let response_trace = app.refresh_contact_list();
     loop {
         terminal.draw(|f| ui::draw(f, &mut app))?;
 
@@ -70,9 +68,9 @@ fn run_app<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char(c) => app.on_key(c),
-                    KeyCode::Left => app.on_left(),
+                    // KeyCode::Left => app.on_left(),
                     KeyCode::Up => app.on_up(),
-                    KeyCode::Right => app.on_right(),
+                    // KeyCode::Right => app.on_right(),
                     KeyCode::Down => app.on_down(),
                     KeyCode::Esc => app.on_esc(),
                     KeyCode::Enter => app.on_enter(),

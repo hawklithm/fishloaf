@@ -1,3 +1,6 @@
+use std::time::SystemTimeError;
+
+use json::JsonValue;
 use rand::{
     distributions::{Distribution, Uniform},
     rngs::ThreadRng,
@@ -9,6 +12,8 @@ use tui::widgets::ListState;
 use crate::client::{
     self,
     my_custom_runtime::{block_on_return, spawn},
+    ActionResult, ContactUserInfo, InputMessage, MessageChannel, ResponseChannel, SystemRequest,
+    RESPONSE_WAITING_LIST,
 };
 
 const LOGS: [(&str, &str); 26] = [
@@ -122,62 +127,27 @@ impl Iterator for SinSignal {
     }
 }
 
-pub struct TabsState<'a> {
-    pub titles: Vec<&'a str>,
-    pub index: usize,
-}
+// pub struct TabsState {
+//     pub titles: Vec<&'a str>,
+//     pub index: usize,
+// }
 
-impl<'a> TabsState<'a> {
-    pub fn new(titles: Vec<&'a str>) -> TabsState {
-        TabsState { titles, index: 0 }
-    }
-    pub fn next(&mut self) {
-        self.index = (self.index + 1) % self.titles.len();
-    }
+// impl<'a> TabsState<'a> {
+//     pub fn new(titles: Vec<&'a str>) -> TabsState {
+//         TabsState { titles, index: 0 }
+//     }
+//     pub fn next(&mut self) {
+//         self.index = (self.index + 1) % self.titles.len();
+//     }
 
-    pub fn previous(&mut self) {
-        if self.index > 0 {
-            self.index -= 1;
-        } else {
-            self.index = self.titles.len() - 1;
-        }
-    }
-}
-
-pub struct InputMessage {
-    pub message: String,
-    pub group: String,
-}
-
-pub struct MessageChannel {
-    pub push_notification_receiver: Receiver<String>,
-    pub message_sender_receiver: (Sender<String>, Receiver<String>),
-}
-
-impl MessageChannel {
-    pub fn new(address: &str, port0: u16, port1: u16) -> MessageChannel {
-        let (push_notification_receiver, message_sender_receiver) =
-            client::start(address, port0, port1);
-        MessageChannel {
-            push_notification_receiver,
-            message_sender_receiver,
-        }
-    }
-
-    pub fn callback(&self, input: InputMessage) {
-        let sender = &self.message_sender_receiver.0;
-        // println!(
-        //     "output message = {}, group = {}",
-        //     input.message, input.group
-        // );
-        if let Err(e) = sender.blocking_send(input.message) {
-            println!("error happend!{}", e);
-        }
-        // if let Err(e) = block_on_return(t) {
-        //     println!("error happend!{}", e);
-        // }
-    }
-}
+//     pub fn previous(&mut self) {
+//         if self.index > 0 {
+//             self.index -= 1;
+//         } else {
+//             self.index = self.titles.len() - 1;
+//         }
+//     }
+// }
 
 pub struct StatefulList<T> {
     pub state: ListState,
@@ -274,10 +244,24 @@ pub struct Message {
     pub speaker: String,
 }
 
-pub struct App<'a> {
-    pub title: &'a str,
+// impl ResponseChannel for App {
+//     fn response(&mut self, message: String) {
+//         if let Some(r) = parse_json(message) {
+//             if r.success {
+//                 self.groups.items.extend(r.data.unwrap());
+//             }
+//         }
+//         // self.app.tabs
+//     }
+// }
+
+// unsafe impl Send for App {}
+// unsafe impl Sync for App {}
+
+pub struct App {
+    pub title: String,
     pub should_quit: bool,
-    pub tabs: TabsState<'a>,
+    // pub tabs: TabsState,
     pub input: String,
     /// Current input mode
     pub input_mode: InputMode,
@@ -287,6 +271,7 @@ pub struct App<'a> {
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
     pub tasks: StatefulList<Message>,
+    pub groups: StatefulList<ContactUserInfo>,
     pub message_callback: MessageChannel,
     // pub logs: StatefulList<(&'a str, &'a str)>,
     // pub signals: Signals,
@@ -295,7 +280,25 @@ pub struct App<'a> {
     // pub enhanced_graphics: bool,
 }
 
-impl<'a> App<'a> {
+// pub struct TestResponseChannel {
+//     app: &'static StatefulList<ContactUserInfo>,
+// }
+
+// impl<'a> ResponseChannel for TestResponseChannel {
+//     fn response(&mut self, message: String) {
+//         if let Some(r) = parse_json(message) {
+//             if r.success {
+//                 self.app.items.extend(r.data.unwrap());
+//             }
+//         }
+//         // self.app.tabs
+//     }
+// }
+
+// unsafe impl Send for TestResponseChannel {}
+// unsafe impl Sync for TestResponseChannel {}
+
+impl App {
     fn receive_push_notification(&mut self) {
         let receiver: &mut Receiver<String> = &mut self.message_callback.push_notification_receiver;
         if let Ok(message) = receiver.try_recv() {
@@ -307,7 +310,7 @@ impl<'a> App<'a> {
         }
     }
 
-    fn waiting_message(&mut self) {
+    fn waiting_contact_list(&mut self) {
         // let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.1;
         // if let Ok(message) = receiver.try_recv() {
         //     self.tasks.items.push(Message {
@@ -317,7 +320,23 @@ impl<'a> App<'a> {
         // }
     }
 
-    pub fn new(title: &'a str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
+    pub fn refresh_contact_list(&self) -> String {
+        client::list_user_and_group(
+            &self.message_callback,
+            // Box::new(TestResponseChannel {
+            //     app: &mut self.groups,
+            // }),
+        )
+        // let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.0;
+        // if let Ok(message) = receiver.try_recv() {
+        //     self.tasks.items.push(Message {
+        //         message: message,
+        //         speaker: String::from("none"),
+        //     });
+        // }
+    }
+
+    pub fn new(title: &str, enhanced_graphics: bool, call_back: MessageChannel) -> App {
         // let mut rand_signal = RandomSignal::new(0, 100);
         // let sparkline_points = rand_signal.by_ref().take(300).collect();
         // let mut sin_signal = SinSignal::new(0.2, 3.0, 18.0);
@@ -325,9 +344,9 @@ impl<'a> App<'a> {
         // let mut sin_signal2 = SinSignal::new(0.1, 2.0, 10.0);
         // let sin2_points = sin_signal2.by_ref().take(200).collect();
         App {
-            title,
+            title: String::from(title),
             should_quit: false,
-            tabs: TabsState::new(vec!["Tab0", "Tab1", "Tab2"]),
+            // tabs: TabsState::new(vec!["Tab0", "Tab1", "Tab2"]),
             message_callback: call_back,
             // show_chart: true,
             // progress: 0.0,
@@ -340,6 +359,7 @@ impl<'a> App<'a> {
             input: String::new(),
             input_mode: InputMode::Normal,
             messages: Vec::new(),
+            groups: StatefulList::new(),
             // logs: StatefulList::with_items(LOGS.to_vec()),
             // signals: Signals {
             //     sin1: Signal {
@@ -393,22 +413,22 @@ impl<'a> App<'a> {
         self.tasks.next();
     }
 
-    pub fn on_right(&mut self) {
-        self.tabs.next();
-    }
+    // pub fn on_right(&mut self) {
+    //     self.tabs.next();
+    // }
 
-    pub fn on_left(&mut self) {
-        self.tabs.previous();
-    }
+    // pub fn on_left(&mut self) {
+    //     self.tabs.previous();
+    // }
 
     pub fn on_enter(&mut self) {
         match self.input_mode {
             InputMode::Editing => {
                 let msg: String = self.input.drain(..).collect();
-                let group = self.tabs.titles[self.tabs.index];
+                // let group = self.tabs.titles[self.tabs.index];
                 self.message_callback.callback(InputMessage {
                     message: msg,
-                    group: String::from(group),
+                    group: String::from(""),
                 })
             }
             _ => {}
@@ -445,8 +465,9 @@ impl<'a> App<'a> {
     }
 
     pub fn on_tick(&mut self) {
-        self.waiting_message();
+        // self.waiting_message();
         self.receive_push_notification();
+        self.message_callback.message_dispatch();
         // Update progress
         // self.progress += 0.001;
         // if self.progress > 1.0 {
