@@ -3,9 +3,11 @@ use chashmap::CHashMap;
 use json::{object::Object, JsonValue};
 use lazy_static::lazy_static;
 use std::{
+    fmt,
     io::{self, Read, Write},
     net::TcpStream,
     result,
+    str::FromStr,
     sync::Arc,
 };
 use tracing::error;
@@ -17,9 +19,25 @@ use crate::utils::{build_message, get_message_from_tcpstream_with_protocol};
 
 use self::my_custom_runtime::spawn;
 
+use strum_macros::{Display, EnumString};
+
 lazy_static! {
     pub static ref RESPONSE_WAITING_LIST: ArcSwap<CHashMap<String, String>> =
         ArcSwap::from(Arc::new(CHashMap::new()));
+}
+
+#[derive(EnumString, Display)]
+pub enum ClientMethod {
+    listUserAndGroup,
+    sendChatMessage,
+}
+
+impl TryInto<ClientMethod> for String {
+    type Error = SerializeErr;
+
+    fn try_into(self) -> Result<ClientMethod, Self::Error> {
+        Ok(ClientMethod::from_str(&self).or_else(|x| Err(SerializeErr::FormatError))?)
+    }
 }
 
 pub struct SystemRequest {
@@ -41,24 +59,27 @@ pub struct ActionResult<T> {
     pub success: bool,
     pub message: Option<String>,
     pub trace_id: String,
+    pub method: String,
 }
 
 impl<T> ActionResult<T> {
-    pub fn create_success(data: T, trace_id: String) -> ActionResult<T> {
+    pub fn create_success(data: T, trace_id: String, method: String) -> ActionResult<T> {
         ActionResult {
             data: Some(data),
             success: true,
             message: None,
             trace_id,
+            method,
         }
     }
 
-    pub fn create_error(error_msg: String, trace_id: String) -> ActionResult<T> {
+    pub fn create_error(error_msg: String, trace_id: String, method: String) -> ActionResult<T> {
         ActionResult {
             data: None,
             success: true,
             message: Some(error_msg),
             trace_id,
+            method,
         }
     }
 }
@@ -126,7 +147,7 @@ pub fn list_user_and_group(
     let uuid = Uuid::new_v4().to_string();
     channel.send_request(
         json::stringify(SystemRequest {
-            method: String::from("listUserAndGroup"),
+            method: ClientMethod::listUserAndGroup.to_string(),
             trace_id: uuid.clone(),
         }),
         // callback,
@@ -159,10 +180,8 @@ impl MessageChannel {
     pub fn message_dispatch(&mut self) {
         let receiver = &mut self.message_sender_receiver.1;
         if let Ok(message) = receiver.try_recv() {
-            if let Some(result) = parse_json(message.clone()) {
-                RESPONSE_WAITING_LIST
-                    .load()
-                    .insert(result.trace_id, message);
+            if let Some(result) = parse_json_for_trace_id(message.clone()) {
+                RESPONSE_WAITING_LIST.load().insert(result, message);
             }
         }
     }
@@ -182,10 +201,11 @@ impl MessageChannel {
     }
 }
 
-fn parse_json(message: String) -> Option<ActionResult<Vec<ContactUserInfo>>> {
+pub(crate) fn parse_json(message: String) -> Option<ActionResult<Vec<ContactUserInfo>>> {
     if let Ok(jvalue) = json::parse(message.trim()) {
         if let JsonValue::Object(obj) = jvalue {
             let success = obj.get("success")?.as_bool()?;
+            let method = String::from(obj.get("method")?.as_str()?);
             if success {
                 let data_vec = obj.get("data")?;
                 if let JsonValue::Array(array) = data_vec {
@@ -197,17 +217,28 @@ fn parse_json(message: String) -> Option<ActionResult<Vec<ContactUserInfo>>> {
                     return Some(ActionResult::create_success(
                         result,
                         String::from(obj.get("traceId")?.as_str()?),
+                        method,
                     ));
                 }
             } else {
                 return Some(ActionResult::create_error(
                     String::from(obj.get("message")?.as_str()?),
                     String::from(obj.get("traceId")?.as_str()?),
+                    method,
                 ));
             }
         }
     }
     return None;
+}
+
+pub(crate) fn parse_json_for_trace_id(message: String) -> Option<String> {
+    if let Ok(jvalue) = json::parse(message.trim()) {
+        if let JsonValue::Object(obj) = jvalue {
+            return Some(String::from(obj.get("traceId")?.as_str()?));
+        }
+    }
+    None
 }
 
 pub(crate) mod my_custom_runtime {

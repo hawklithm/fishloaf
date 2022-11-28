@@ -1,5 +1,6 @@
-use std::time::SystemTimeError;
+use std::{sync::Arc, time::SystemTimeError};
 
+use chashmap::CHashMap;
 use json::JsonValue;
 use rand::{
     distributions::{Distribution, Uniform},
@@ -12,8 +13,8 @@ use tui::widgets::ListState;
 use crate::client::{
     self,
     my_custom_runtime::{block_on_return, spawn},
-    ActionResult, ContactUserInfo, InputMessage, MessageChannel, ResponseChannel, SystemRequest,
-    RESPONSE_WAITING_LIST,
+    ActionResult, ClientMethod, ContactUserInfo, InputMessage, MessageChannel, ResponseChannel,
+    SystemRequest, RESPONSE_WAITING_LIST,
 };
 
 const LOGS: [(&str, &str); 26] = [
@@ -310,16 +311,6 @@ impl App {
         }
     }
 
-    fn waiting_contact_list(&mut self) {
-        // let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.1;
-        // if let Ok(message) = receiver.try_recv() {
-        //     self.tasks.items.push(Message {
-        //         message: message,
-        //         speaker: String::from("none"),
-        //     });
-        // }
-    }
-
     pub fn refresh_contact_list(&self) -> String {
         client::list_user_and_group(
             &self.message_callback,
@@ -327,13 +318,28 @@ impl App {
             //     app: &mut self.groups,
             // }),
         )
-        // let receiver: &mut Receiver<String> = &mut self.message_callback.message_sender_receiver.0;
-        // if let Ok(message) = receiver.try_recv() {
-        //     self.tasks.items.push(Message {
-        //         message: message,
-        //         speaker: String::from("none"),
-        //     });
-        // }
+    }
+
+    fn dispatch_event(&mut self) {
+        let old_map = RESPONSE_WAITING_LIST.load().clear();
+        if old_map.len() == 0 {
+            return;
+        }
+        old_map.into_iter().for_each(|(_, value)| {
+            if let Some(result) = client::parse_json(value.clone()) {
+                if result.success {
+                    if let Ok(method_enum) = TryInto::<ClientMethod>::try_into(result.method) {
+                        match method_enum {
+                            ClientMethod::listUserAndGroup => {
+                                self.groups.items.truncate(0);
+                                self.groups.items.append(&mut result.data.unwrap());
+                            }
+                            ClientMethod::sendChatMessage => {}
+                        }
+                    }
+                }
+            }
+        });
     }
 
     pub fn new(title: &str, enhanced_graphics: bool, call_back: MessageChannel) -> App {
@@ -468,6 +474,7 @@ impl App {
         // self.waiting_message();
         self.receive_push_notification();
         self.message_callback.message_dispatch();
+        self.dispatch_event();
         // Update progress
         // self.progress += 0.001;
         // if self.progress > 1.0 {

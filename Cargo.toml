@@ -29,6 +29,8 @@ chashmap = "2.2"
 arc-swap = "1.5"
 uuid = { version = "0.8.2", features = ["v4"] }
 json="0.12"
+strum_macros = "0.24"
+strum ="0.24"
 
 
 
