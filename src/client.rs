@@ -113,7 +113,7 @@ impl TryFrom<JsonValue> for ContactUserInfo {
                         .ok_or(SerializeErr::FieldFormatError)?,
                 ),
                 is_group: data
-                    .get("isGroup")
+                    .get("group")
                     .ok_or(SerializeErr::FieldMissing)?
                     .as_bool()
                     .ok_or(SerializeErr::FieldFormatError)?,
