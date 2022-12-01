@@ -131,23 +131,29 @@ impl Iterator for SinSignal {
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
+    pub mark: u16,
 }
 
 impl<T> StatefulList<T> {
-    pub fn new() -> StatefulList<T> {
+    pub fn new(mark: u16) -> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items: Vec::new(),
+            mark,
         }
     }
-    pub fn with_items(items: Vec<T>) -> StatefulList<T> {
+    pub fn with_items(mark: u16, items: Vec<T>) -> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items,
+            mark,
         }
     }
 
     pub fn next(&mut self) {
+        if self.items.len() == 0 {
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
@@ -162,6 +168,9 @@ impl<T> StatefulList<T> {
     }
 
     pub fn previous(&mut self) {
+        if self.items.len() == 0 {
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -251,6 +260,7 @@ pub struct App {
     pub tasks: StatefulList<Message>,
     pub groups: StatefulList<ContactUserInfo>,
     pub message_callback: MessageChannel,
+    pub focus: u16,
     // pub logs: StatefulList<(&'a str, &'a str)>,
     // pub signals: Signals,
     // pub barchart: Vec<(&'a str, u64)>,
@@ -288,7 +298,7 @@ impl App {
         }
     }
 
-    pub fn refresh_contact_list(&self) -> String {
+    pub fn refresh_contact_list(&self) {
         client::list_user_and_group(
             &self.message_callback,
             // Box::new(TestResponseChannel {
@@ -338,11 +348,12 @@ impl App {
             //     points: sparkline_points,
             //     tick_rate: 1,
             // },
-            tasks: StatefulList::new(),
+            tasks: StatefulList::new(1),
             input: String::new(),
             input_mode: InputMode::Normal,
             messages: Vec::new(),
-            groups: StatefulList::new(),
+            groups: StatefulList::new(0),
+            focus: 0,
             // logs: StatefulList::with_items(LOGS.to_vec()),
             // signals: Signals {
             //     sin1: Signal {
@@ -389,20 +400,31 @@ impl App {
     }
 
     pub fn on_up(&mut self) {
-        self.tasks.previous();
+        if self.focus == self.tasks.mark {
+            self.tasks.previous();
+        } else if self.focus == self.groups.mark {
+            self.groups.previous();
+        }
     }
 
     pub fn on_down(&mut self) {
-        self.tasks.next();
+        if self.focus == self.tasks.mark {
+            self.tasks.next();
+        } else if self.focus == self.groups.mark {
+            self.groups.next();
+        }
     }
 
-    // pub fn on_right(&mut self) {
-    //     self.tabs.next();
-    // }
+    pub fn on_right(&mut self) {
+        self.focus = self.focus.saturating_add(1);
+        if self.focus >= 2 {
+            self.focus = 1;
+        }
+    }
 
-    // pub fn on_left(&mut self) {
-    //     self.tabs.previous();
-    // }
+    pub fn on_left(&mut self) {
+        self.focus = self.focus.saturating_sub(1);
+    }
 
     pub fn on_enter(&mut self) {
         match self.input_mode {

@@ -15,27 +15,7 @@ use tui::{
 use unicode_width::UnicodeWidthStr;
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    let chunks = Layout::default()
-        .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
-        .split(f.size());
-    let titles = app
-        .groups
-        .items
-        .iter()
-        .map(|t| {
-            Spans::from(Span::styled(
-                &t.display_name,
-                Style::default().fg(Color::Green),
-            ))
-        })
-        .collect();
-    let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title("groups"))
-        .highlight_style(Style::default().fg(Color::Yellow))
-        .select(app.groups.state.selected().unwrap_or(0));
-    f.render_widget(tabs, chunks[0]);
-    // match app.tabs.index {
-    draw_choosen_tab(f, app, chunks[1]);
+    draw_choosen_tab(f, app, f.size());
     // 1 => draw_second_tab(f, app, chunks[1]),
     // 2 => draw_third_tab(f, app, chunks[1]),
     // _ => {}
@@ -81,15 +61,48 @@ where
     }
 }
 
-fn draw_dialog<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+fn draw_talk_list<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
 where
     B: Backend,
 {
-    let constraints = vec![Constraint::Percentage(80), Constraint::Percentage(20)];
-    let chunks = Layout::default()
-        .constraints(constraints)
-        .direction(Direction::Horizontal)
-        .split(area);
+    let group_name_style = Style::default().fg(Color::Blue);
+    let groups: Vec<ListItem> = app
+        .groups
+        .items
+        .iter()
+        .map(|m| {
+            if m.is_group {
+                ListItem::new(vec![Spans::from(vec![
+                    Span::styled(&m.display_name, group_name_style),
+                    Span::raw("[群]"),
+                ])])
+            } else {
+                ListItem::new(vec![Spans::from(vec![Span::styled(
+                    &m.display_name,
+                    group_name_style,
+                )])])
+            }
+        })
+        .collect();
+    let groups = List::new(groups)
+        .block(
+            Block::default()
+                .borders(if app.focus == app.groups.mark {
+                    Borders::ALL
+                } else {
+                    Borders::BOTTOM | Borders::RIGHT
+                })
+                .title("groups"),
+        )
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol("> ");
+    f.render_stateful_widget(groups, area, &mut app.groups.state);
+}
+
+fn draw_conversation<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
     let speaker_name_style = Style::default().fg(Color::Blue);
     // Draw tasks
     let tasks: Vec<ListItem> = app
@@ -105,10 +118,35 @@ where
         })
         .collect();
     let tasks = List::new(tasks)
-        .block(Block::default().borders(Borders::TOP).title("dialog"))
+        .block(
+            Block::default()
+                .borders(if app.focus == app.tasks.mark {
+                    Borders::ALL
+                } else {
+                    Borders::BOTTOM | Borders::LEFT | Borders::RIGHT
+                })
+                .title("dialog"),
+        )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol("> ");
-    f.render_stateful_widget(tasks, chunks[0], &mut app.tasks.state);
+    f.render_stateful_widget(tasks, area, &mut app.tasks.state);
+}
+
+fn draw_dialog<B>(f: &mut Frame<B>, app: &mut App, area: Rect)
+where
+    B: Backend,
+{
+    let constraints = vec![
+        Constraint::Percentage(20),
+        Constraint::Percentage(60),
+        Constraint::Percentage(20),
+    ];
+    let chunks = Layout::default()
+        .constraints(constraints)
+        .direction(Direction::Horizontal)
+        .split(area);
+    draw_talk_list(f, app, chunks[0]);
+    draw_conversation(f, app, chunks[1]);
 }
 
 // fn draw_text<B>(f: &mut Frame<B>, area: Rect)

@@ -15,7 +15,7 @@ use crate::crossterm::run;
 use argh::FromArgs;
 use std::{error::Error, time::Duration};
 use time::{format_description, UtcOffset};
-use tracing::{dispatcher, Dispatch, Level};
+use tracing::{dispatcher, Dispatch, Level, info};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt::time::OffsetTime, FmtSubscriber};
 
@@ -84,8 +84,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli: Cli = argh::from_env();
     let tick_rate = Duration::from_millis(cli.tick_rate);
 
-    let (dispatcher, _) = make_dispatch(&format!("{}/{}", &cli.log_home, "fishloaf"));
+    let (dispatcher, guard) = make_dispatch(&format!("{}/{}", &cli.log_home, "fishloaf"));
     dispatcher::with_default(&dispatcher, || {
+        info!("fishloaf termchat start!");
         run(
             tick_rate,
             cli.enhanced_graphics,

@@ -140,10 +140,7 @@ pub struct MessageChannel {
     pub message_sender_receiver: (Sender<String>, Receiver<String>),
 }
 
-pub fn list_user_and_group(
-    channel: &MessageChannel,
-    // callback: Box<dyn ResponseChannel + Send + Sync>,
-) -> String {
+pub fn list_user_and_group(channel: &MessageChannel) {
     let uuid = Uuid::new_v4().to_string();
     channel.send_request(
         json::stringify(SystemRequest {
@@ -152,7 +149,6 @@ pub fn list_user_and_group(
         }),
         // callback,
     );
-    uuid
 }
 
 impl MessageChannel {
