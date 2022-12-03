@@ -3,6 +3,7 @@ use chashmap::CHashMap;
 use json::{object::Object, JsonValue};
 use lazy_static::lazy_static;
 use std::{
+    borrow::Cow,
     fmt,
     io::{self, Read, Write},
     net::TcpStream,
@@ -10,7 +11,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use tracing::error;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -45,11 +46,29 @@ pub struct SystemRequest {
     pub trace_id: String,
 }
 
+pub struct MessageSendRequest {
+    pub method: String,
+    pub trace_id: String,
+    pub message: String,
+    pub target_id: String,
+}
+
 impl Into<JsonValue> for SystemRequest {
     fn into(self) -> JsonValue {
         let mut obj = Object::new();
         obj.insert("method", json::JsonValue::String(self.method));
         obj.insert("traceId", json::JsonValue::String(self.trace_id));
+        JsonValue::Object(obj)
+    }
+}
+
+impl Into<JsonValue> for MessageSendRequest {
+    fn into(self) -> JsonValue {
+        let mut obj = Object::new();
+        obj.insert("method", json::JsonValue::String(self.method));
+        obj.insert("traceId", json::JsonValue::String(self.trace_id));
+        obj.insert("message", json::JsonValue::String(self.message));
+        obj.insert("targetId", json::JsonValue::String(self.target_id));
         JsonValue::Object(obj)
     }
 }
@@ -84,10 +103,16 @@ impl<T> ActionResult<T> {
     }
 }
 
-pub struct ContactUserInfo {
-    pub unique_id: String,
+pub struct ContactUserInfo<'a> {
+    pub unique_id: Cow<'a, str>,
     pub display_name: String,
     pub is_group: bool,
+}
+
+pub struct ContactMessage<'a> {
+    pub unique_id: Cow<'a, str>,
+    pub display_name: Cow<'a, str>,
+    pub text: Cow<'a, str>,
 }
 
 pub enum SerializeErr {
@@ -96,16 +121,49 @@ pub enum SerializeErr {
     FieldFormatError,
 }
 
-impl TryFrom<JsonValue> for ContactUserInfo {
+impl<'a> TryFrom<JsonValue> for ContactMessage<'a> {
     fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
         if let JsonValue::Object(data) = value {
-            return Ok(ContactUserInfo {
-                unique_id: String::from(
-                    data.get("uniqueId")
+            let unique = String::from(
+                data.get("userId")
+                    .ok_or(SerializeErr::FieldMissing)?
+                    .as_str()
+                    .ok_or(SerializeErr::FieldFormatError)?,
+            );
+            return Ok(ContactMessage {
+                unique_id: Cow::from(unique),
+                display_name: Cow::from(String::from(
+                    data.get("displayName")
                         .ok_or(SerializeErr::FieldMissing)?
                         .as_str()
                         .ok_or(SerializeErr::FieldFormatError)?,
-                ),
+                )),
+                text: Cow::from(String::from(
+                    data.get("text")
+                        .ok_or(SerializeErr::FieldMissing)?
+                        .as_str()
+                        .ok_or(SerializeErr::FieldFormatError)?,
+                )),
+            });
+        } else {
+            Err(SerializeErr::FormatError)
+        }
+    }
+
+    type Error = SerializeErr;
+}
+
+impl<'a> TryFrom<JsonValue> for ContactUserInfo<'a> {
+    fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
+        if let JsonValue::Object(data) = value {
+            let unique = String::from(
+                data.get("uniqueId")
+                    .ok_or(SerializeErr::FieldMissing)?
+                    .as_str()
+                    .ok_or(SerializeErr::FieldFormatError)?,
+            );
+            return Ok(ContactUserInfo {
+                unique_id: Cow::from(unique),
                 display_name: String::from(
                     data.get("displayName")
                         .ok_or(SerializeErr::FieldMissing)?
@@ -183,21 +241,21 @@ impl MessageChannel {
     }
 
     pub fn callback(&self, input: InputMessage) {
+        let uuid = Uuid::new_v4().to_string();
+        let message = json::stringify(MessageSendRequest {
+            method: ClientMethod::sendChatMessage.to_string(),
+            trace_id: uuid,
+            message: input.message,
+            target_id: input.group,
+        });
         let sender = &self.message_sender_receiver.0;
-        // println!(
-        //     "output message = {}, group = {}",
-        //     input.message, input.group
-        // );
-        if let Err(e) = sender.blocking_send(input.message) {
+        if let Err(e) = sender.blocking_send(message) {
             println!("error happend!{}", e);
         }
-        // if let Err(e) = block_on_return(t) {
-        //     println!("error happend!{}", e);
-        // }
     }
 }
 
-pub(crate) fn parse_json(message: String) -> Option<ActionResult<Vec<ContactUserInfo>>> {
+pub(crate) fn parse_json<'a>(message: String) -> Option<ActionResult<Vec<ContactUserInfo<'a>>>> {
     if let Ok(jvalue) = json::parse(message.trim()) {
         if let JsonValue::Object(obj) = jvalue {
             let success = obj.get("success")?.as_bool()?;
@@ -285,6 +343,7 @@ fn createMessagePushClient(address: &str, port: u16) -> Receiver<String> {
     spawn(async move {
         loop {
             let ret_msg = get_message_from_tcpstream_with_protocol(&mut stream);
+            info!("message receive: {}", &ret_msg);
             let _ = tx.send(ret_msg).await;
         }
     });

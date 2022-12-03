@@ -1,4 +1,9 @@
-use std::{sync::Arc, time::SystemTimeError};
+use num_enum::TryFromPrimitive;
+use std::{
+    borrow::{Borrow, Cow},
+    sync::Arc,
+    time::SystemTimeError,
+};
 
 use chashmap::CHashMap;
 use json::JsonValue;
@@ -13,8 +18,8 @@ use tui::widgets::ListState;
 use crate::client::{
     self,
     my_custom_runtime::{block_on_return, spawn},
-    ActionResult, ClientMethod, ContactUserInfo, InputMessage, MessageChannel, ResponseChannel,
-    SystemRequest, RESPONSE_WAITING_LIST,
+    ActionResult, ClientMethod, ContactMessage, ContactUserInfo, InputMessage, MessageChannel,
+    ResponseChannel, SystemRequest, RESPONSE_WAITING_LIST,
 };
 
 const LOGS: [(&str, &str); 26] = [
@@ -72,6 +77,13 @@ const EVENTS: [(&str, u64); 24] = [
     ("B23", 3),
     ("B24", 5),
 ];
+
+#[derive(TryFromPrimitive)]
+#[repr(u16)]
+pub enum AppBlock {
+    GroupList = 0,
+    DialogDetail = 1,
+}
 
 pub enum InputMode {
     Normal,
@@ -246,7 +258,7 @@ pub struct Message {
 // unsafe impl Send for App {}
 // unsafe impl Sync for App {}
 
-pub struct App {
+pub struct App<'a> {
     pub title: String,
     pub should_quit: bool,
     pub input: String,
@@ -258,14 +270,11 @@ pub struct App {
     // pub progress: f64,
     // pub sparkline: Signal<RandomSignal>,
     pub tasks: StatefulList<Message>,
-    pub groups: StatefulList<ContactUserInfo>,
+    pub groups: StatefulList<ContactUserInfo<'a>>,
     pub message_callback: MessageChannel,
     pub focus: u16,
-    // pub logs: StatefulList<(&'a str, &'a str)>,
-    // pub signals: Signals,
-    // pub barchart: Vec<(&'a str, u64)>,
-    // pub servers: Vec<Server<'a>>,
-    // pub enhanced_graphics: bool,
+    pub target_id: Option<Cow<'a, str>>,
+    pub message_shard: CHashMap<String, Vec<Message>>,
 }
 
 // pub struct TestResponseChannel {
@@ -286,15 +295,34 @@ pub struct App {
 // unsafe impl Send for TestResponseChannel {}
 // unsafe impl Sync for TestResponseChannel {}
 
-impl App {
+impl<'a> App<'a> {
     fn receive_push_notification(&mut self) {
         let receiver: &mut Receiver<String> = &mut self.message_callback.push_notification_receiver;
         if let Ok(message) = receiver.try_recv() {
-            info!("message receive: {}", message.clone());
-            self.tasks.items.push(Message {
-                message: message,
-                speaker: String::from("none"),
-            });
+            if let Ok(jvalue) = json::parse(message.trim()) {
+                if let Ok(contact) = ContactMessage::try_from(jvalue) {
+                    info!("parse message success: {}", message.clone());
+                    if !self.message_shard.contains_key(contact.unique_id.as_ref()) {
+                        self.message_shard.insert_new(
+                            contact.unique_id.as_ref().to_string(),
+                            Vec::<Message>::new(),
+                        );
+                    }
+                    if let Some(mut guard) = self.message_shard.get_mut(contact.unique_id.as_ref())
+                    {
+                        guard.push(Message {
+                            message: contact.text.to_string(),
+                            speaker: contact.display_name.to_string(),
+                        });
+                    }
+                    self.tasks.items.push(Message {
+                        message: contact.text.to_string(),
+                        speaker: contact.display_name.to_string(),
+                    });
+                }
+            } else {
+                info!("parse message error: {}", message.clone());
+            }
         }
     }
 
@@ -329,73 +357,19 @@ impl App {
         });
     }
 
-    pub fn new(title: &str, enhanced_graphics: bool, call_back: MessageChannel) -> App {
-        // let mut rand_signal = RandomSignal::new(0, 100);
-        // let sparkline_points = rand_signal.by_ref().take(300).collect();
-        // let mut sin_signal = SinSignal::new(0.2, 3.0, 18.0);
-        // let sin1_points = sin_signal.by_ref().take(100).collect();
-        // let mut sin_signal2 = SinSignal::new(0.1, 2.0, 10.0);
-        // let sin2_points = sin_signal2.by_ref().take(200).collect();
+    pub fn new(title: &str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
         App {
             title: String::from(title),
             should_quit: false,
-            // tabs: TabsState::new(vec!["Tab0", "Tab1", "Tab2"]),
             message_callback: call_back,
-            // show_chart: true,
-            // progress: 0.0,
-            // sparkline: Signal {
-            //     source: rand_signal,
-            //     points: sparkline_points,
-            //     tick_rate: 1,
-            // },
-            tasks: StatefulList::new(1),
+            tasks: StatefulList::new(AppBlock::DialogDetail as u16),
             input: String::new(),
             input_mode: InputMode::Normal,
             messages: Vec::new(),
-            groups: StatefulList::new(0),
+            groups: StatefulList::new(AppBlock::GroupList as u16),
             focus: 0,
-            // logs: StatefulList::with_items(LOGS.to_vec()),
-            // signals: Signals {
-            //     sin1: Signal {
-            //         source: sin_signal,
-            //         points: sin1_points,
-            //         tick_rate: 5,
-            //     },
-            //     sin2: Signal {
-            //         source: sin_signal2,
-            //         points: sin2_points,
-            //         tick_rate: 10,
-            //     },
-            //     window: [0.0, 20.0],
-            // },
-            // barchart: EVENTS.to_vec(),
-            // servers: vec![
-            //     Server {
-            //         name: "NorthAmerica-1",
-            //         location: "New York City",
-            //         coords: (40.71, -74.00),
-            //         status: "Up",
-            //     },
-            //     Server {
-            //         name: "Europe-1",
-            //         location: "Paris",
-            //         coords: (48.85, 2.35),
-            //         status: "Failure",
-            //     },
-            //     Server {
-            //         name: "SouthAmerica-1",
-            //         location: "São Paulo",
-            //         coords: (-23.54, -46.62),
-            //         status: "Up",
-            //     },
-            //     Server {
-            //         name: "Asia-1",
-            //         location: "Singapore",
-            //         coords: (1.35, 103.86),
-            //         status: "Up",
-            //     },
-            // ],
-            // enhanced_graphics,
+            target_id: None,
+            message_shard: CHashMap::new(),
         }
     }
 
@@ -430,13 +404,31 @@ impl App {
         match self.input_mode {
             InputMode::Editing => {
                 let msg: String = self.input.drain(..).collect();
-                // let group = self.tabs.titles[self.tabs.index];
-                self.message_callback.callback(InputMessage {
-                    message: msg,
-                    group: String::from(""),
-                })
+                if let Some(target_id) = self.target_id.to_owned() {
+                    self.message_callback.callback(InputMessage {
+                        message: msg,
+                        group: target_id.to_string(),
+                    })
+                }
             }
-            _ => {}
+            InputMode::Normal => {
+                if self.groups.mark == self.focus {
+                    if let Some(idx) = self.groups.state.selected() {
+                        let unique_id = &self.groups.items[idx].unique_id;
+                        info!("choose target id={}", unique_id);
+                        self.target_id = Some(unique_id.to_owned());
+                        if let Some(messages) = self.message_shard.get(unique_id.as_ref()) {
+                            self.tasks.items = messages.to_vec();
+                            self.tasks.state.select(Some(self.tasks.items.len() - 1));
+                        } else {
+                            self.tasks.items.truncate(0);
+                            self.tasks.state.select(None);
+                        }
+                    } else {
+                        return;
+                    }
+                }
+            }
         }
     }
 
