@@ -1,11 +1,13 @@
+use chrono::Local;
 use num_enum::TryFromPrimitive;
 use std::{
     borrow::{Borrow, Cow},
+    ops::AddAssign,
     sync::Arc,
     time::SystemTimeError,
 };
 
-use chashmap::CHashMap;
+use chashmap::{CHashMap, ReadGuard};
 use json::JsonValue;
 use rand::{
     distributions::{Distribution, Uniform},
@@ -21,6 +23,9 @@ use crate::client::{
     ActionResult, ClientMethod, ContactMessage, ContactUserInfo, InputMessage, MessageChannel,
     ResponseChannel, SystemRequest, RESPONSE_WAITING_LIST,
 };
+
+extern crate chrono;
+use chrono::prelude::*;
 
 const LOGS: [(&str, &str); 26] = [
     ("Event1", "INFO"),
@@ -274,7 +279,10 @@ pub struct App<'a> {
     pub message_callback: MessageChannel,
     pub focus: u16,
     pub target_id: Option<Cow<'a, str>>,
+    pub target_display_name: Option<Box<String>>,
     pub message_shard: CHashMap<String, Vec<Message>>,
+    pub message_unread: CHashMap<String, u16>,
+    pub message_latest_time: CHashMap<String, i64>,
 }
 
 // pub struct TestResponseChannel {
@@ -292,33 +300,74 @@ pub struct App<'a> {
 //     }
 // }
 
-// unsafe impl Send for TestResponseChannel {}
-// unsafe impl Sync for TestResponseChannel {}
-
 impl<'a> App<'a> {
+    fn message_unread_count_up(&mut self, contact: &ContactMessage) {
+        if !self.message_unread.contains_key(contact.unique_id.as_ref()) {
+            self.message_unread
+                .insert_new(contact.unique_id.as_ref().to_owned(), 0u16);
+        }
+        if let Some(mut guard) = self.message_unread.get_mut(contact.unique_id.as_ref()) {
+            guard.add_assign(1);
+        }
+        if let Some(idx) = &self.target_id {
+            self.message_unread.insert(idx.as_ref().to_owned(), 0u16);
+        }
+    }
+
+    fn message_latest_update(&mut self, contact: &ContactMessage) {
+        let dt = Local::now();
+        let timestamp = dt.timestamp_millis();
+        self.message_latest_time
+            .insert(contact.unique_id.as_ref().to_owned(), timestamp);
+    }
+
+    fn message_shard(&mut self, contact: &ContactMessage) {
+        if !self.message_shard.contains_key(contact.unique_id.as_ref()) {
+            self.message_shard.insert_new(
+                contact.unique_id.as_ref().to_string(),
+                Vec::<Message>::new(),
+            );
+        }
+        if let Some(mut guard) = self.message_shard.get_mut(contact.unique_id.as_ref()) {
+            guard.push(Message {
+                message: contact.text.to_string(),
+                speaker: contact.display_name.to_string(),
+            });
+        }
+    }
+
     fn receive_push_notification(&mut self) {
         let receiver: &mut Receiver<String> = &mut self.message_callback.push_notification_receiver;
         if let Ok(message) = receiver.try_recv() {
             if let Ok(jvalue) = json::parse(message.trim()) {
                 if let Ok(contact) = ContactMessage::try_from(jvalue) {
                     info!("parse message success: {}", message.clone());
-                    if !self.message_shard.contains_key(contact.unique_id.as_ref()) {
-                        self.message_shard.insert_new(
-                            contact.unique_id.as_ref().to_string(),
-                            Vec::<Message>::new(),
-                        );
-                    }
-                    if let Some(mut guard) = self.message_shard.get_mut(contact.unique_id.as_ref())
-                    {
-                        guard.push(Message {
-                            message: contact.text.to_string(),
-                            speaker: contact.display_name.to_string(),
-                        });
-                    }
-                    self.tasks.items.push(Message {
-                        message: contact.text.to_string(),
-                        speaker: contact.display_name.to_string(),
+                    self.message_unread_count_up(&contact);
+                    self.message_shard(&contact);
+                    self.message_latest_update(&contact);
+                    self.groups.items.sort_by(|a, b| {
+                        let left =
+                            if let Some(num) = self.message_latest_time.get(a.unique_id.as_ref()) {
+                                num.to_owned()
+                            } else {
+                                0i64
+                            };
+                        let right =
+                            if let Some(num) = self.message_latest_time.get(b.unique_id.as_ref()) {
+                                num.to_owned()
+                            } else {
+                                0i64
+                            };
+                        right.cmp(&left)
                     });
+                    if let Some(unique) = &self.target_id {
+                        if unique.eq(contact.unique_id.as_ref()) {
+                            self.tasks.items.push(Message {
+                                message: contact.text.to_string(),
+                                speaker: contact.display_name.to_string(),
+                            });
+                        }
+                    }
                 }
             } else {
                 info!("parse message error: {}", message.clone());
@@ -370,6 +419,9 @@ impl<'a> App<'a> {
             focus: 0,
             target_id: None,
             message_shard: CHashMap::new(),
+            message_unread: CHashMap::new(),
+            message_latest_time: CHashMap::new(),
+            target_display_name: None,
         }
     }
 
@@ -415,8 +467,10 @@ impl<'a> App<'a> {
                 if self.groups.mark == self.focus {
                     if let Some(idx) = self.groups.state.selected() {
                         let unique_id = &self.groups.items[idx].unique_id;
+                        let display_name = &self.groups.items[idx].display_name;
                         info!("choose target id={}", unique_id);
                         self.target_id = Some(unique_id.to_owned());
+                        self.target_display_name = Some(display_name.clone());
                         if let Some(messages) = self.message_shard.get(unique_id.as_ref()) {
                             self.tasks.items = messages.to_vec();
                             self.tasks.state.select(Some(self.tasks.items.len() - 1));

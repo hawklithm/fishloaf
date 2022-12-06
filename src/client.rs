@@ -105,7 +105,7 @@ impl<T> ActionResult<T> {
 
 pub struct ContactUserInfo<'a> {
     pub unique_id: Cow<'a, str>,
-    pub display_name: String,
+    pub display_name: Box<String>,
     pub is_group: bool,
 }
 
@@ -164,12 +164,12 @@ impl<'a> TryFrom<JsonValue> for ContactUserInfo<'a> {
             );
             return Ok(ContactUserInfo {
                 unique_id: Cow::from(unique),
-                display_name: String::from(
+                display_name: Box::new(String::from(
                     data.get("displayName")
                         .ok_or(SerializeErr::FieldMissing)?
                         .as_str()
                         .ok_or(SerializeErr::FieldFormatError)?,
-                ),
+                )),
                 is_group: data
                     .get("group")
                     .ok_or(SerializeErr::FieldMissing)?
@@ -380,38 +380,4 @@ pub fn start(
         push_notification_receiver,
         (message_sender, response_reciever),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str;
-    use std::{
-        io::{self, Read, Write},
-        net::TcpStream,
-    };
-
-    use super::start;
-
-    #[test]
-    fn test_socket() {
-        // start();
-    }
-
-    #[test]
-    fn test_socket2() {
-        let mut stream = TcpStream::connect("127.0.0.1:9999").unwrap();
-        //发送字符串
-        stream.write("hello,rust.欢迎使用Rust".as_bytes()).unwrap();
-
-        //创建1k的缓冲区，用于接收server发过来的内容
-        let mut buffer = [0; 1024];
-        //读取server发过来的内容
-        stream.read(&mut buffer).unwrap();
-
-        //打印接收到的内容(注:如果收到的实际内容小于1k,后面的部分默认全是\u{0}填充，所以要trim_matches去掉)
-        println!(
-            "Response from server:{:?}",
-            str::from_utf8(&buffer).unwrap().trim_matches('\u{0}')
-        );
-    }
 }

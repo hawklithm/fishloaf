@@ -71,16 +71,41 @@ where
         .items
         .iter()
         .map(|m| {
-            if m.is_group {
-                ListItem::new(vec![Spans::from(vec![
-                    Span::styled(&m.display_name, group_name_style),
-                    Span::raw("[群]"),
-                ])])
+            let unread_message = if app.message_unread.contains_key(m.unique_id.as_ref()) {
+                if let Some(t) = app.message_unread.get(m.unique_id.as_ref()) {
+                    t.to_owned()
+                } else {
+                    0u16
+                }
             } else {
-                ListItem::new(vec![Spans::from(vec![Span::styled(
-                    &m.display_name,
-                    group_name_style,
-                )])])
+                0u16
+            };
+            let t = &m.display_name;
+            if m.is_group {
+                if unread_message > 0 {
+                    ListItem::new(vec![Spans::from(vec![
+                        Span::raw(format!("({})", unread_message)),
+                        Span::styled(t.as_ref(), group_name_style),
+                        Span::raw("[群]"),
+                    ])])
+                } else {
+                    ListItem::new(vec![Spans::from(vec![
+                        Span::styled(t.as_ref(), group_name_style),
+                        Span::raw("[群]"),
+                    ])])
+                }
+            } else {
+                if unread_message > 0 {
+                    ListItem::new(vec![Spans::from(vec![
+                        Span::raw(format!("({})", unread_message)),
+                        Span::styled(t.as_ref(), group_name_style),
+                    ])])
+                } else {
+                    ListItem::new(vec![Spans::from(vec![Span::styled(
+                        t.as_ref(),
+                        group_name_style,
+                    )])])
+                }
             }
         })
         .collect();
@@ -117,6 +142,12 @@ where
             ])])
         })
         .collect();
+    let dialog_name = if let Some(name) = &app.target_display_name {
+        name.as_ref()
+    } else {
+        "dialog"
+    };
+
     let tasks = List::new(tasks)
         .block(
             Block::default()
@@ -125,7 +156,7 @@ where
                 } else {
                     Borders::BOTTOM | Borders::LEFT | Borders::RIGHT
                 })
-                .title("dialog"),
+                .title(dialog_name),
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol("> ");
