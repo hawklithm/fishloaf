@@ -456,11 +456,13 @@ impl<'a> App<'a> {
         match self.input_mode {
             InputMode::Editing => {
                 let msg: String = self.input.drain(..).collect();
-                if let Some(target_id) = self.target_id.to_owned() {
-                    self.message_callback.callback(InputMessage {
-                        message: msg,
-                        group: target_id.to_string(),
-                    })
+                if msg.len() > 0 {
+                    if let Some(target_id) = self.target_id.to_owned() {
+                        self.message_callback.callback(InputMessage {
+                            message: msg,
+                            group: target_id.to_string(),
+                        })
+                    }
                 }
             }
             InputMode::Normal => {
