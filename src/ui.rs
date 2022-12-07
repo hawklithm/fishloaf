@@ -137,7 +137,7 @@ where
         .map(|m| {
             ListItem::new(vec![Spans::from(vec![
                 Span::styled(&m.speaker, speaker_name_style),
-                Span::raw(" >>>> "),
+                Span::raw(" >> "),
                 Span::raw(&m.message),
             ])])
         })
@@ -169,8 +169,7 @@ where
 {
     let constraints = vec![
         Constraint::Percentage(20),
-        Constraint::Percentage(60),
-        Constraint::Percentage(20),
+        Constraint::Percentage(80),
     ];
     let chunks = Layout::default()
         .constraints(constraints)

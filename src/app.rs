@@ -249,20 +249,6 @@ pub struct Message {
     pub speaker: String,
 }
 
-// impl ResponseChannel for App {
-//     fn response(&mut self, message: String) {
-//         if let Some(r) = parse_json(message) {
-//             if r.success {
-//                 self.groups.items.extend(r.data.unwrap());
-//             }
-//         }
-//         // self.app.tabs
-//     }
-// }
-
-// unsafe impl Send for App {}
-// unsafe impl Sync for App {}
-
 pub struct App<'a> {
     pub title: String,
     pub should_quit: bool,
@@ -284,21 +270,6 @@ pub struct App<'a> {
     pub message_unread: CHashMap<String, u16>,
     pub message_latest_time: CHashMap<String, i64>,
 }
-
-// pub struct TestResponseChannel {
-//     app: &'static StatefulList<ContactUserInfo>,
-// }
-
-// impl<'a> ResponseChannel for TestResponseChannel {
-//     fn response(&mut self, message: String) {
-//         if let Some(r) = parse_json(message) {
-//             if r.success {
-//                 self.app.items.extend(r.data.unwrap());
-//             }
-//         }
-//         // self.app.tabs
-//     }
-// }
 
 impl<'a> App<'a> {
     fn message_unread_count_up(&mut self, contact: &ContactMessage) {
@@ -329,10 +300,17 @@ impl<'a> App<'a> {
             );
         }
         if let Some(mut guard) = self.message_shard.get_mut(contact.unique_id.as_ref()) {
-            guard.push(Message {
-                message: contact.text.to_string(),
-                speaker: contact.display_name.to_string(),
-            });
+            if contact.echo {
+                guard.push(Message {
+                    message: contact.text.to_string(),
+                    speaker: contact.display_name.to_string() + "(*我)",
+                });
+            } else {
+                guard.push(Message {
+                    message: contact.text.to_string(),
+                    speaker: contact.display_name.to_string(),
+                });
+            }
         }
     }
 
@@ -362,10 +340,17 @@ impl<'a> App<'a> {
                     });
                     if let Some(unique) = &self.target_id {
                         if unique.eq(contact.unique_id.as_ref()) {
-                            self.tasks.items.push(Message {
-                                message: contact.text.to_string(),
-                                speaker: contact.display_name.to_string(),
-                            });
+                            if contact.echo {
+                                self.tasks.items.push(Message {
+                                    message: contact.text.to_string(),
+                                    speaker: contact.display_name.to_string() + "(*我)",
+                                });
+                            } else {
+                                self.tasks.items.push(Message {
+                                    message: contact.text.to_string(),
+                                    speaker: contact.display_name.to_string(),
+                                });
+                            }
                         }
                     }
                 }
@@ -426,30 +411,50 @@ impl<'a> App<'a> {
     }
 
     pub fn on_up(&mut self) {
-        if self.focus == self.tasks.mark {
-            self.tasks.previous();
-        } else if self.focus == self.groups.mark {
-            self.groups.previous();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                if self.focus == self.tasks.mark {
+                    self.tasks.previous();
+                } else if self.focus == self.groups.mark {
+                    self.groups.previous();
+                }
+            }
         }
     }
 
     pub fn on_down(&mut self) {
-        if self.focus == self.tasks.mark {
-            self.tasks.next();
-        } else if self.focus == self.groups.mark {
-            self.groups.next();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                if self.focus == self.tasks.mark {
+                    self.tasks.next();
+                } else if self.focus == self.groups.mark {
+                    self.groups.next();
+                }
+            }
         }
     }
 
     pub fn on_right(&mut self) {
-        self.focus = self.focus.saturating_add(1);
-        if self.focus >= 2 {
-            self.focus = 1;
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                self.focus = self.focus.saturating_add(1);
+                if self.focus >= 2 {
+                    self.focus = 1;
+                }
+            }
         }
     }
 
     pub fn on_left(&mut self) {
-        self.focus = self.focus.saturating_sub(1);
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                self.focus = self.focus.saturating_sub(1);
+            }
+        }
     }
 
     pub fn on_enter(&mut self) {
@@ -459,9 +464,25 @@ impl<'a> App<'a> {
                 if msg.len() > 0 {
                     if let Some(target_id) = self.target_id.to_owned() {
                         self.message_callback.callback(InputMessage {
-                            message: msg,
+                            message: msg.clone(),
                             group: target_id.to_string(),
-                        })
+                        });
+                        //自己发送的数据回显
+                        if !self.message_shard.contains_key(target_id.as_ref()) {
+                            self.message_shard
+                                .insert_new(target_id.as_ref().to_string(), Vec::<Message>::new());
+                        }
+                        if let Some(mut guard) = self.message_shard.get_mut(target_id.as_ref()) {
+                            guard.push(Message {
+                                message: msg,
+                                speaker: String::from("(我)"),
+                            });
+                        }
+                        //刷新界面缓存数据
+                        if let Some(messages) = self.message_shard.get(target_id.as_ref()) {
+                            self.tasks.items = messages.to_vec();
+                            self.tasks.state.select(Some(self.tasks.items.len() - 1));
+                        }
                     }
                 }
             }

@@ -37,7 +37,7 @@ impl TryInto<ClientMethod> for String {
     type Error = SerializeErr;
 
     fn try_into(self) -> Result<ClientMethod, Self::Error> {
-        Ok(ClientMethod::from_str(&self).or_else(|x| Err(SerializeErr::FormatError))?)
+        Ok(ClientMethod::from_str(&self).or_else(|_| Err(SerializeErr::FormatError))?)
     }
 }
 
