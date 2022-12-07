@@ -113,6 +113,7 @@ pub struct ContactMessage<'a> {
     pub unique_id: Cow<'a, str>,
     pub display_name: Cow<'a, str>,
     pub text: Cow<'a, str>,
+    pub echo: bool,
 }
 
 pub enum SerializeErr {
@@ -124,6 +125,11 @@ pub enum SerializeErr {
 impl<'a> TryFrom<JsonValue> for ContactMessage<'a> {
     fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
         if let JsonValue::Object(data) = value {
+            let echo = data
+                .get("echo")
+                .unwrap_or(&JsonValue::Boolean(false))
+                .as_bool()
+                .ok_or(SerializeErr::FieldFormatError)?;
             let unique = String::from(
                 data.get("userId")
                     .ok_or(SerializeErr::FieldMissing)?
@@ -144,6 +150,7 @@ impl<'a> TryFrom<JsonValue> for ContactMessage<'a> {
                         .as_str()
                         .ok_or(SerializeErr::FieldFormatError)?,
                 )),
+                echo,
             });
         } else {
             Err(SerializeErr::FormatError)
