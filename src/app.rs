@@ -1,14 +1,31 @@
+use chrono::Local;
+use num_enum::TryFromPrimitive;
+use std::{
+    borrow::{Borrow, Cow},
+    ops::AddAssign,
+    sync::Arc,
+    time::SystemTimeError,
+};
+
+use chashmap::{CHashMap, ReadGuard};
+use json::JsonValue;
 use rand::{
     distributions::{Distribution, Uniform},
     rngs::ThreadRng,
 };
+use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::info;
 use tui::widgets::ListState;
 
-const TASKS: [&str; 24] = [
-    "Item1", "Item2", "Item3", "Item4", "Item5", "Item6", "Item7", "Item8", "Item9", "Item10",
-    "Item11", "Item12", "Item13", "Item14", "Item15", "Item16", "Item17", "Item18", "Item19",
-    "Item20", "Item21", "Item22", "Item23", "Item24",
-];
+use crate::client::{
+    self,
+    my_custom_runtime::{block_on_return, spawn},
+    ActionResult, ClientMethod, ContactMessage, ContactUserInfo, InputMessage, MessageChannel,
+    ResponseChannel, SystemRequest, RESPONSE_WAITING_LIST,
+};
+
+extern crate chrono;
+use chrono::prelude::*;
 
 const LOGS: [(&str, &str); 26] = [
     ("Event1", "INFO"),
@@ -66,6 +83,18 @@ const EVENTS: [(&str, u64); 24] = [
     ("B24", 5),
 ];
 
+#[derive(TryFromPrimitive)]
+#[repr(u16)]
+pub enum AppBlock {
+    GroupList = 0,
+    DialogDetail = 1,
+}
+
+pub enum InputMode {
+    Normal,
+    Editing,
+}
+
 #[derive(Clone)]
 pub struct RandomSignal {
     distribution: Uniform<u64>,
@@ -116,42 +145,32 @@ impl Iterator for SinSignal {
     }
 }
 
-pub struct TabsState<'a> {
-    pub titles: Vec<&'a str>,
-    pub index: usize,
-}
-
-impl<'a> TabsState<'a> {
-    pub fn new(titles: Vec<&'a str>) -> TabsState {
-        TabsState { titles, index: 0 }
-    }
-    pub fn next(&mut self) {
-        self.index = (self.index + 1) % self.titles.len();
-    }
-
-    pub fn previous(&mut self) {
-        if self.index > 0 {
-            self.index -= 1;
-        } else {
-            self.index = self.titles.len() - 1;
-        }
-    }
-}
-
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
+    pub mark: u16,
 }
 
 impl<T> StatefulList<T> {
-    pub fn with_items(items: Vec<T>) -> StatefulList<T> {
+    pub fn new(mark: u16) -> StatefulList<T> {
+        StatefulList {
+            state: ListState::default(),
+            items: Vec::new(),
+            mark,
+        }
+    }
+    pub fn with_items(mark: u16, items: Vec<T>) -> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items,
+            mark,
         }
     }
 
     pub fn next(&mut self) {
+        if self.items.len() == 0 {
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
@@ -166,6 +185,9 @@ impl<T> StatefulList<T> {
     }
 
     pub fn previous(&mut self) {
+        if self.items.len() == 0 {
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -221,128 +243,319 @@ pub struct Server<'a> {
     pub status: &'a str,
 }
 
+#[derive(Clone)]
+pub struct Message {
+    pub message: String,
+    pub speaker: String,
+}
+
 pub struct App<'a> {
-    pub title: &'a str,
+    pub title: String,
     pub should_quit: bool,
-    pub tabs: TabsState<'a>,
-    pub show_chart: bool,
-    pub progress: f64,
-    pub sparkline: Signal<RandomSignal>,
-    pub tasks: StatefulList<&'a str>,
-    pub logs: StatefulList<(&'a str, &'a str)>,
-    pub signals: Signals,
-    pub barchart: Vec<(&'a str, u64)>,
-    pub servers: Vec<Server<'a>>,
-    pub enhanced_graphics: bool,
+    pub input: String,
+    /// Current input mode
+    pub input_mode: InputMode,
+    /// History of recorded messages
+    pub messages: Vec<String>,
+    // pub show_chart: bool,
+    // pub progress: f64,
+    // pub sparkline: Signal<RandomSignal>,
+    pub tasks: StatefulList<Message>,
+    pub groups: StatefulList<ContactUserInfo<'a>>,
+    pub message_callback: MessageChannel,
+    pub focus: u16,
+    pub target_id: Option<Cow<'a, str>>,
+    pub target_display_name: Option<Box<String>>,
+    pub message_shard: CHashMap<String, Vec<Message>>,
+    pub message_unread: CHashMap<String, u16>,
+    pub message_latest_time: CHashMap<String, i64>,
 }
 
 impl<'a> App<'a> {
-    pub fn new(title: &'a str, enhanced_graphics: bool) -> App<'a> {
-        let mut rand_signal = RandomSignal::new(0, 100);
-        let sparkline_points = rand_signal.by_ref().take(300).collect();
-        let mut sin_signal = SinSignal::new(0.2, 3.0, 18.0);
-        let sin1_points = sin_signal.by_ref().take(100).collect();
-        let mut sin_signal2 = SinSignal::new(0.1, 2.0, 10.0);
-        let sin2_points = sin_signal2.by_ref().take(200).collect();
+    fn message_unread_count_up(&mut self, contact: &ContactMessage) {
+        if !self.message_unread.contains_key(contact.unique_id.as_ref()) {
+            self.message_unread
+                .insert_new(contact.unique_id.as_ref().to_owned(), 0u16);
+        }
+        if let Some(mut guard) = self.message_unread.get_mut(contact.unique_id.as_ref()) {
+            guard.add_assign(1);
+        }
+        if let Some(idx) = &self.target_id {
+            self.message_unread.insert(idx.as_ref().to_owned(), 0u16);
+        }
+    }
+
+    fn message_latest_update(&mut self, contact: &ContactMessage) {
+        let dt = Local::now();
+        let timestamp = dt.timestamp_millis();
+        self.message_latest_time
+            .insert(contact.unique_id.as_ref().to_owned(), timestamp);
+    }
+
+    fn message_shard(&mut self, contact: &ContactMessage) {
+        if !self.message_shard.contains_key(contact.unique_id.as_ref()) {
+            self.message_shard.insert_new(
+                contact.unique_id.as_ref().to_string(),
+                Vec::<Message>::new(),
+            );
+        }
+        if let Some(mut guard) = self.message_shard.get_mut(contact.unique_id.as_ref()) {
+            if contact.echo {
+                guard.push(Message {
+                    message: contact.text.to_string(),
+                    speaker: contact.display_name.to_string() + "(*我)",
+                });
+            } else {
+                guard.push(Message {
+                    message: contact.text.to_string(),
+                    speaker: contact.display_name.to_string(),
+                });
+            }
+        }
+    }
+
+    fn receive_push_notification(&mut self) {
+        let receiver: &mut Receiver<String> = &mut self.message_callback.push_notification_receiver;
+        if let Ok(message) = receiver.try_recv() {
+            if let Ok(jvalue) = json::parse(message.trim()) {
+                if let Ok(contact) = ContactMessage::try_from(jvalue) {
+                    info!("parse message success: {}", message.clone());
+                    self.message_unread_count_up(&contact);
+                    self.message_shard(&contact);
+                    self.message_latest_update(&contact);
+                    self.groups.items.sort_by(|a, b| {
+                        let left =
+                            if let Some(num) = self.message_latest_time.get(a.unique_id.as_ref()) {
+                                num.to_owned()
+                            } else {
+                                0i64
+                            };
+                        let right =
+                            if let Some(num) = self.message_latest_time.get(b.unique_id.as_ref()) {
+                                num.to_owned()
+                            } else {
+                                0i64
+                            };
+                        right.cmp(&left)
+                    });
+                    if let Some(unique) = &self.target_id {
+                        if unique.eq(contact.unique_id.as_ref()) {
+                            if contact.echo {
+                                self.tasks.items.push(Message {
+                                    message: contact.text.to_string(),
+                                    speaker: contact.display_name.to_string() + "(*我)",
+                                });
+                            } else {
+                                self.tasks.items.push(Message {
+                                    message: contact.text.to_string(),
+                                    speaker: contact.display_name.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            } else {
+                info!("parse message error: {}", message.clone());
+            }
+        }
+    }
+
+    pub fn refresh_contact_list(&self) {
+        client::list_user_and_group(
+            &self.message_callback,
+            // Box::new(TestResponseChannel {
+            //     app: &mut self.groups,
+            // }),
+        )
+    }
+
+    fn dispatch_event(&mut self) {
+        let old_map = RESPONSE_WAITING_LIST.load().clear();
+        if old_map.len() == 0 {
+            return;
+        }
+        old_map.into_iter().for_each(|(_, value)| {
+            if let Some(result) = client::parse_json(value.clone()) {
+                if result.success {
+                    if let Ok(method_enum) = TryInto::<ClientMethod>::try_into(result.method) {
+                        match method_enum {
+                            ClientMethod::listUserAndGroup => {
+                                self.groups.items.truncate(0);
+                                self.groups.items.append(&mut result.data.unwrap());
+                            }
+                            ClientMethod::sendChatMessage => {}
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn new(title: &str, enhanced_graphics: bool, call_back: MessageChannel) -> App<'a> {
         App {
-            title,
+            title: String::from(title),
             should_quit: false,
-            tabs: TabsState::new(vec!["Tab0", "Tab1", "Tab2"]),
-            show_chart: true,
-            progress: 0.0,
-            sparkline: Signal {
-                source: rand_signal,
-                points: sparkline_points,
-                tick_rate: 1,
-            },
-            tasks: StatefulList::with_items(TASKS.to_vec()),
-            logs: StatefulList::with_items(LOGS.to_vec()),
-            signals: Signals {
-                sin1: Signal {
-                    source: sin_signal,
-                    points: sin1_points,
-                    tick_rate: 5,
-                },
-                sin2: Signal {
-                    source: sin_signal2,
-                    points: sin2_points,
-                    tick_rate: 10,
-                },
-                window: [0.0, 20.0],
-            },
-            barchart: EVENTS.to_vec(),
-            servers: vec![
-                Server {
-                    name: "NorthAmerica-1",
-                    location: "New York City",
-                    coords: (40.71, -74.00),
-                    status: "Up",
-                },
-                Server {
-                    name: "Europe-1",
-                    location: "Paris",
-                    coords: (48.85, 2.35),
-                    status: "Failure",
-                },
-                Server {
-                    name: "SouthAmerica-1",
-                    location: "São Paulo",
-                    coords: (-23.54, -46.62),
-                    status: "Up",
-                },
-                Server {
-                    name: "Asia-1",
-                    location: "Singapore",
-                    coords: (1.35, 103.86),
-                    status: "Up",
-                },
-            ],
-            enhanced_graphics,
+            message_callback: call_back,
+            tasks: StatefulList::new(AppBlock::DialogDetail as u16),
+            input: String::new(),
+            input_mode: InputMode::Normal,
+            messages: Vec::new(),
+            groups: StatefulList::new(AppBlock::GroupList as u16),
+            focus: 0,
+            target_id: None,
+            message_shard: CHashMap::new(),
+            message_unread: CHashMap::new(),
+            message_latest_time: CHashMap::new(),
+            target_display_name: None,
         }
     }
 
     pub fn on_up(&mut self) {
-        self.tasks.previous();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                if self.focus == self.tasks.mark {
+                    self.tasks.previous();
+                } else if self.focus == self.groups.mark {
+                    self.groups.previous();
+                }
+            }
+        }
     }
 
     pub fn on_down(&mut self) {
-        self.tasks.next();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                if self.focus == self.tasks.mark {
+                    self.tasks.next();
+                } else if self.focus == self.groups.mark {
+                    self.groups.next();
+                }
+            }
+        }
     }
 
     pub fn on_right(&mut self) {
-        self.tabs.next();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                self.focus = self.focus.saturating_add(1);
+                if self.focus >= 2 {
+                    self.focus = 1;
+                }
+            }
+        }
     }
 
     pub fn on_left(&mut self) {
-        self.tabs.previous();
+        match self.input_mode {
+            InputMode::Editing => {}
+            InputMode::Normal => {
+                self.focus = self.focus.saturating_sub(1);
+            }
+        }
     }
 
-    pub fn on_key(&mut self, c: char) {
-        match c {
-            'q' => {
-                self.should_quit = true;
+    pub fn on_enter(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => {
+                let msg: String = self.input.drain(..).collect();
+                if msg.len() > 0 {
+                    if let Some(target_id) = self.target_id.to_owned() {
+                        self.message_callback.callback(InputMessage {
+                            message: msg.clone(),
+                            group: target_id.to_string(),
+                        });
+                        //自己发送的数据回显
+                        if !self.message_shard.contains_key(target_id.as_ref()) {
+                            self.message_shard
+                                .insert_new(target_id.as_ref().to_string(), Vec::<Message>::new());
+                        }
+                        if let Some(mut guard) = self.message_shard.get_mut(target_id.as_ref()) {
+                            guard.push(Message {
+                                message: msg,
+                                speaker: String::from("(我)"),
+                            });
+                        }
+                        //刷新界面缓存数据
+                        if let Some(messages) = self.message_shard.get(target_id.as_ref()) {
+                            self.tasks.items = messages.to_vec();
+                            self.tasks.state.select(Some(self.tasks.items.len() - 1));
+                        }
+                    }
+                }
             }
-            't' => {
-                self.show_chart = !self.show_chart;
+            InputMode::Normal => {
+                if self.groups.mark == self.focus {
+                    if let Some(idx) = self.groups.state.selected() {
+                        let unique_id = &self.groups.items[idx].unique_id;
+                        let display_name = &self.groups.items[idx].display_name;
+                        info!("choose target id={}", unique_id);
+                        self.target_id = Some(unique_id.to_owned());
+                        self.target_display_name = Some(display_name.clone());
+                        if let Some(messages) = self.message_shard.get(unique_id.as_ref()) {
+                            self.tasks.items = messages.to_vec();
+                            self.tasks.state.select(Some(self.tasks.items.len() - 1));
+                        } else {
+                            self.tasks.items.truncate(0);
+                            self.tasks.state.select(None);
+                        }
+                    } else {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn on_esc(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => self.input_mode = InputMode::Normal,
+            _ => {}
+        }
+    }
+
+    pub fn on_backspace(&mut self) {
+        match self.input_mode {
+            InputMode::Editing => {
+                self.input.pop();
             }
             _ => {}
         }
     }
 
-    pub fn on_tick(&mut self) {
-        // Update progress
-        self.progress += 0.001;
-        if self.progress > 1.0 {
-            self.progress = 0.0;
+    pub fn on_key(&mut self, c: char) {
+        match self.input_mode {
+            InputMode::Normal => match c {
+                'q' => {
+                    self.should_quit = true;
+                }
+                'e' => self.input_mode = InputMode::Editing,
+                _ => {}
+            },
+            InputMode::Editing => self.input.push(c),
         }
+    }
 
-        self.sparkline.on_tick();
-        self.signals.on_tick();
+    pub fn on_tick(&mut self) {
+        // self.waiting_message();
+        self.receive_push_notification();
+        self.message_callback.message_dispatch();
+        self.dispatch_event();
+        // Update progress
+        // self.progress += 0.001;
+        // if self.progress > 1.0 {
+        //     self.progress = 0.0;
+        // }
 
-        let log = self.logs.items.pop().unwrap();
-        self.logs.items.insert(0, log);
+        // self.sparkline.on_tick();
+        // self.signals.on_tick();
 
-        let event = self.barchart.pop().unwrap();
-        self.barchart.insert(0, event);
+        // let log = self.logs.items.pop().unwrap();
+        // self.logs.items.insert(0, log);
+
+        // let event = self.barchart.pop().unwrap();
+        // self.barchart.insert(0, event);
     }
 }
