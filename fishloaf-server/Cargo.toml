@@ -1,0 +1,41 @@
+[package]
+name = "fishloaf-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "fishloaf-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full", "tracing"] }
+tokio-util = { version = "0.7", features = ["full"] }
+tokio-stream = "0.1"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["local-time", "env-filter", "time"] }
+tracing-appender = "0.2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+reqwest = { version = "0.11", features = ["json", "cookies", "rustls-tls"], default-features = false }
+
+async-trait = "0.1"
+thiserror = "1"
+anyhow = "1"
+
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+lazy_static = "1.4"
+once_cell = "1.5"
+parking_lot = "0.12"
+rand = "0.8"
+dirs = "4"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

@@ -1,0 +1,32 @@
+[package]
+name = "fishloaf-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tui = "0.19"
+crossterm = "0.25"
+argh = "0.1"
+rand = "0.8"
+unicode-width = "0.1"
+tokio.workspace = true
+tokio-util.workspace = true
+lazy_static = "1.4.0"
+num_cpus = "1"
+futures = { version = "0.3", features = ["thread-pool"] }
+once_cell = "1.5"
+tracing.workspace = true
+tracing-appender = "0.2"
+tracing-subscriber.workspace = true
+time = { version = "0.3", features = ["macros", "local-offset"] }
+dirs = "4"
+chashmap = "2.2"
+arc-swap = "1.5"
+uuid = { version = "0.8.2", features = ["v4"] }
+json = "0.12"
+strum_macros = "0.24"
+strum = "0.24"
+num_enum = "0.5"
+chrono = "0.4"

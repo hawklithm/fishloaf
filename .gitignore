@@ -1,2 +1,4 @@
 /target
-Cargo.lock
+login
+fishloaf-server/target
+fishloaf-tui/target
